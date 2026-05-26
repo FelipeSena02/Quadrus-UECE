@@ -1,0 +1,144 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  PO
+  DEV
+  TESTER
+  MANAGER
+}
+
+enum SprintStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  TESTING
+  DONE
+}
+
+enum LogActionType {
+  CREATED
+  MOVED_STATUS
+  ESTIMATED
+  DELETED
+  RESTORED
+  SPRINT_CHANGED
+  POKER_CONSOLIDATED
+}
+
+model User {
+  id            String          @id @default(uuid())
+  name          String
+  email         String          @unique
+  password      String
+  memberships   ProjectMember[]
+  createdTasks  Task[]          @relation("CreatedTasks")
+  assignedTasks Task[]          @relation("AssignedTasks")
+  votes         Vote[]
+  logs          ActivityLog[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Project {
+  id          String          @id @default(uuid())
+  name        String
+  description String?
+  ownerId     String
+  members     ProjectMember[]
+  sprints     Sprint[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role      Role     @default(DEV)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, projectId])
+}
+
+model Sprint {
+  id        String       @id @default(uuid())
+  name      String
+  startDate DateTime?
+  endDate   DateTime?
+  status    SprintStatus @default(PLANNED)
+  projectId String
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model Task {
+  id           String        @id @default(uuid())
+  title        String
+  description  String?
+  status       TaskStatus    @default(TODO)
+  storyPoints  Int?
+  order        Int           @default(0)
+  sprintId     String?
+  sprint       Sprint?       @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  createdById  String
+  createdBy    User          @relation("CreatedTasks", fields: [createdById], references: [id], onDelete: Restrict)
+  assignedToId String?
+  assignedTo   User?         @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: SetNull)
+  votes        Vote[]
+  pokerState   PokerState?
+  logs         ActivityLog[]
+  deletedAt    DateTime?     // Soft Delete timestamp
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Vote {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value     String   // "1", "2", "3", "5", "8", "13", "?", "☕"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([taskId, userId])
+}
+
+model PokerState {
+  id                 String   @id @default(uuid())
+  taskId             String   @unique
+  task               Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  isRevealed         Boolean  @default(false)
+  consolidatedPoints Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ActivityLog {
+  id         String        @id @default(uuid())
+  taskId     String?
+  task       Task?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  actionType LogActionType
+  details    String?       // JSON metadata
+  createdAt  DateTime      @default(now())
+}
