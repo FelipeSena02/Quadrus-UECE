@@ -118,3 +118,9 @@ dist-ssr/
 # Prisma dev DBs
 backend/prisma/dev.db
 backend/prisma/dev.db-journal
+
+# Firebase admin credentials
+firebase-service-account.json
+*firebase-adminsdk*.json
+backend/firebase-service-account.json
+backend/*firebase-adminsdk*.json
