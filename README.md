@@ -45,14 +45,14 @@ cd Quadrus
 ```
 
 ### 2. Iniciar o Banco de Dados (PostgreSQL)
-Recomendamos utilizar o Docker Compose fornecido na raiz para subir a instância do PostgreSQL de maneira instantânea:
+Certifique-se de ter o Docker/Docker Desktop ativo em sua máquina. Utilize o Docker Compose fornecido na raiz para subir a instância do PostgreSQL de maneira instantânea:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
-*Isso criará um container Postgres rodando localmente na porta `5432` com as credenciais padrão de desenvolvimento.*
+*Isso criará e iniciará o container Postgres rodando localmente na porta `5432` com as credenciais padrão de desenvolvimento.*
 
 ### 3. Instalar e Configurar o Backend
-Acesse a pasta do backend, instale as dependências e configure as variáveis de ambiente:
+Acesse a pasta do backend, instale as dependências e configure as credenciais:
 
 ```bash
 # Entrar no diretório do backend
@@ -62,24 +62,39 @@ cd backend
 npm install
 ```
 
-O arquivo `.env` já vem pré-configurado na raiz do backend. Caso queira customizar a conexão com o banco ou a chave secreta do JWT, edite as variáveis contidas nele:
+#### Variáveis de Ambiente (.env)
+O arquivo `.env` na raiz do backend vem pré-configurado de fábrica para desenvolvimento. Caso queira customizar a conexão com o banco ou a chave secreta do JWT, edite as variáveis contidas nele:
 * `PORT`: Porta padrão do servidor backend (`5000`)
 * `DATABASE_URL`: String de conexão com o banco Postgres (`postgresql://postgres:postgres@localhost:5432/quadrus?schema=public`)
 * `JWT_SECRET`: Chave secreta de geração de tokens de sessão
 * `CLIENT_URL`: URL de origem do frontend para liberação de CORS (`http://localhost:5173`)
 
-### 4. Executar Migrações do Banco de Dados
-Com o banco de dados rodando e conectado, envie a modelagem do Prisma para o PostgreSQL e gere o cliente de banco de dados tipado:
+#### Credenciais Firebase Admin SDK (Privado)
+Para a autenticação com o Firebase Admin funcionar, você deve salvar o arquivo JSON de chaves do seu projeto Firebase na pasta raiz do servidor backend:
+* Caminho do arquivo: `backend/firebase-service-account.json`
+* **ATENÇÃO:** Nunca commite ou publique este arquivo. Ele já está explicitamente configurado no `.gitignore` para proteção das credenciais da equipe.
+
+### 4. Executar Migrações do Banco de Dados & Prisma Client
+Com o banco de dados Postgres rodando no Docker, envie a modelagem do Prisma para o banco de dados e sincronize as tabelas:
 ```bash
-# Rodar migrações do banco (com o Postgres rodando)
+# Rodar migrações do banco (com o Postgres ativo)
 npx prisma migrate dev --name init
 
-# Garantir que o cliente do Prisma foi gerado
+# Garantir que o cliente do Prisma foi gerado localmente
 npx prisma generate
 ```
 
-### 5. Instalar o Frontend
-Abra um novo terminal na raiz do projeto e instale as dependências do frontend de apresentação:
+#### Uso do Prisma Client na Equipe
+Para manter uma única instância e reaproveitar conexões com segurança no backend, foi configurada e exportada a instância global do Prisma. Use sempre o import do módulo compartilhado ao invés de instanciar um novo client:
+```javascript
+import prisma from './config/prisma.js';
+
+// Exemplo de uso:
+const usuarios = await prisma.usuario.findMany();
+```
+
+### 5. Instalar e Configurar o Frontend
+Abra um novo terminal na raiz do projeto, acesse a pasta `frontend` e instale as dependências:
 ```bash
 # Entrar no diretório do frontend
 cd frontend
@@ -87,6 +102,23 @@ cd frontend
 # Instalar dependências
 npm install --legacy-peer-deps
 ```
+
+#### Variáveis de Ambiente do Frontend (.env)
+O frontend consome credenciais do Firebase Client de forma segura. Crie o arquivo `.env` na raiz do diretório `frontend` tomando como modelo o arquivo `.env.example`:
+```bash
+# Crie o arquivo .env
+cp .env.example .env
+```
+Abra o arquivo `.env` criado e preencha as variáveis com suas credenciais do app Firebase:
+```env
+VITE_FIREBASE_API_KEY=sua_api_key_aqui
+VITE_FIREBASE_AUTH_DOMAIN=seu_auth_domain_aqui
+VITE_FIREBASE_PROJECT_ID=seu_project_id_aqui
+VITE_FIREBASE_STORAGE_BUCKET=seu_storage_bucket_aqui
+VITE_FIREBASE_MESSAGING_SENDER_ID=seu_sender_id_aqui
+VITE_FIREBASE_APP_ID=seu_app_id_aqui
+```
+*Assim como as credenciais do Admin SDK, o arquivo `frontend/.env` é mantido privado e está adicionado ao `.gitignore`.*
 
 ---
 
