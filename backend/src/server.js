@@ -5,6 +5,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import { verifyFirebaseToken } from './middlewares/auth.middleware.js';
+import projetoRoutes from "./routes/projetoRoutes.js";
+import usuarioRoutes from "./routes/usuarioRoutes.js";
 
 dotenv.config();
 
@@ -18,7 +20,7 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 app.use(cors({
   origin: CLIENT_URL,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -35,6 +37,10 @@ app.get('/api/protected', verifyFirebaseToken, (req, res) => {
     user: req.user
   });
 });
+
+// API Routes
+app.use("/api/projetos", projetoRoutes);
+app.use("/api/usuarios", usuarioRoutes);
 
 // Socket.io setup
 const io = new Server(httpServer, {
