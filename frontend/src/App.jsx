@@ -9,6 +9,7 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './utils/firebaseConfig.js';
+import api from './utils/api.js';
 import ProjectList from './components/ProjectList.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import KanbanBoard from './components/KanbanBoard.jsx';
@@ -146,7 +147,17 @@ export default function App() {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const nome = user.displayName || user.email.split('@')[0];
+          const email = user.email;
+          await api.post('/api/usuarios', { nome, email });
+          console.log('Usuário sincronizado com o banco de dados PostgreSQL.');
+        } catch (error) {
+          console.error('Erro ao sincronizar usuário com o backend:', error);
+        }
+      }
       setCurrentUser(user);
       setAuthLoading(false);
     });

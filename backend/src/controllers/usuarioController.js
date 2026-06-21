@@ -85,9 +85,7 @@ export const criarUsuario = async (req, res) => {
     });
 
     if (usuarioExistente) {
-      return res.status(409).json({
-        error: "Já existe um usuário com este email",
-      });
+      return res.status(200).json(usuarioExistente);
     }
 
     const usuario = await prisma.usuario.create({
