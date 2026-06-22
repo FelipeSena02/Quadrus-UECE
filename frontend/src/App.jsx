@@ -6,10 +6,10 @@ import {
   LogOut
 } from 'lucide-react';
 import axios from 'axios';
-import { io } from 'socket.io-client';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './utils/firebaseConfig.js';
 import api from './utils/api.js';
+import { socket } from './utils/socket.js';
 import ProjectList from './components/ProjectList.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import KanbanBoard from './components/KanbanBoard.jsx';
@@ -186,12 +186,14 @@ export default function App() {
       })
       .catch(() => setBackendStatus('offline'));
 
-    const socket = io(BACKEND_URL, { autoConnect: true, reconnectionAttempts: 3 });
+    // Use the singleton socket instance from socket.js
+    if (socket.disconnected) socket.connect();
     socket.on('connect', () => setSocketStatus('online'));
     socket.on('connect_error', () => setSocketStatus('offline'));
 
     return () => {
-      socket.disconnect();
+      socket.off('connect');
+      socket.off('connect_error');
     };
   }, []);
 
@@ -203,6 +205,7 @@ export default function App() {
     }
     setCurrentUser(null);
     setSelectedProject(null);
+    setProjects(MOCK_PROJECTS);
   };
 
   if (authLoading) {

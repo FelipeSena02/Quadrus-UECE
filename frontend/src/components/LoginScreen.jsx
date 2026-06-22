@@ -62,7 +62,9 @@ export default function LoginScreen({ onLoginSuccess }) {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             await updateProfile(userCredential.user, { displayName: name });
-            onLoginSuccess({ ...userCredential.user, displayName: name });
+            // Reload the user to ensure displayName is reflected in the user object
+            await userCredential.user.reload();
+            onLoginSuccess(userCredential.user);
         } catch (err) {
             console.error('Register error:', err);
             handleAuthError(err);
@@ -188,7 +190,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                         )}
                         {viewMode === 'forgot_password' && (
                             <>
-                                <button onClick={() => switchMode('login')} className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700 transition-colors mb-4 group">
+                                <button onClick={() => switchMode('login')} aria-label="Voltar para a tela de login" className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700 transition-colors mb-4 group">
                                     <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
                                     Voltar para o login
                                 </button>
@@ -273,6 +275,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                                         <button 
                                             type="button" 
                                             onClick={() => switchMode('forgot_password')} 
+                                            aria-label="Ir para a tela de recuperação de senha"
                                             className="text-xs font-bold text-brand-600 hover:text-brand-500 transition-colors"
                                         >
                                             Esqueceu a senha?
@@ -315,6 +318,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                             Não possui uma conta?{' '}
                             <button 
                                 onClick={() => switchMode('register')} 
+                                aria-label="Ir para a tela de criação de conta"
                                 className="font-bold text-brand-600 hover:text-brand-500 transition-colors"
                             >
                                 Criar conta agora
@@ -326,6 +330,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                             Já possui uma conta?{' '}
                             <button 
                                 onClick={() => switchMode('login')} 
+                                aria-label="Ir para a tela de login"
                                 className="font-bold text-brand-600 hover:text-brand-500 transition-colors"
                             >
                                 Fazer login
