@@ -80,7 +80,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
         try {
             await sendPasswordResetEmail(auth, email);
-            setSuccessMessage('E-mail de recuperação enviado! Verifique sua caixa de entrada.');
+            setSuccessMessage('Se o seu e-mail estiver correto, enviaremos um link para recuperar a senha.');
         } catch (err) {
             console.error('Forgot password error:', err);
             handleAuthError(err);
