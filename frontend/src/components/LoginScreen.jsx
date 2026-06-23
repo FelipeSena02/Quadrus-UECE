@@ -3,7 +3,8 @@ import {
     signInWithEmailAndPassword, 
     createUserWithEmailAndPassword, 
     updateProfile, 
-    sendPasswordResetEmail 
+    sendPasswordResetEmail,
+    sendEmailVerification 
 } from 'firebase/auth';
 import { auth } from '../utils/firebaseConfig.js';
 import { KeyRound, Mail, ShieldAlert, Sparkles, User, ArrowLeft, CheckCircle2 } from 'lucide-react';
@@ -39,6 +40,13 @@ export default function LoginScreen({ onLoginSuccess }) {
 
         try {
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            // Verifica se o e-mail foi confirmado
+            if (!userCredential.user.emailVerified) {
+                await auth.signOut();
+                setError('Seu e-mail ainda não foi verificado. Verifique sua caixa de entrada (e spam) e clique no link de confirmação.');
+                setLoading(false);
+                return;
+            }
             onLoginSuccess(userCredential.user);
         } catch (err) {
             console.error('Login error:', err);
@@ -62,12 +70,14 @@ export default function LoginScreen({ onLoginSuccess }) {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             await updateProfile(userCredential.user, { displayName: name });
-            // Desloga o usuário recém-criado para que ele faça login manualmente
+            // Envia e-mail de verificação
+            await sendEmailVerification(userCredential.user);
+            // Desloga o usuário recém-criado para que ele faça login após verificar o e-mail
             await auth.signOut();
             // Redireciona para a tela de login com mensagem de sucesso
             setPassword('');
             setViewMode('login');
-            setSuccessMessage('Conta criada com sucesso! Faça login para continuar.');
+            setSuccessMessage('Conta criada com sucesso! Enviamos um link de verificação para o seu e-mail. Confirme seu e-mail antes de fazer login.');
         } catch (err) {
             console.error('Register error:', err);
             handleAuthError(err);

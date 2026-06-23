@@ -75,6 +75,13 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        // Se o e-mail não foi verificado, desloga e não permite acesso
+        if (!user.emailVerified) {
+          await signOut(auth);
+          setCurrentUser(null);
+          setAuthLoading(false);
+          return;
+        }
         try {
           const nome = user.displayName || user.email.split('@')[0];
           const email = user.email;
