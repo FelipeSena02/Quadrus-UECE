@@ -243,25 +243,39 @@ export const deletarProjeto = async (req, res) => {
 ========================= */
 export const adicionarMembro = async (req, res) => {
   const { id } = req.params;
-  const { id_usuario, perfil } = req.body;
+  const { email, perfil } = req.body;
 
   try {
     // validar projeto
     const projeto = await prisma.projeto.findUnique({
       where: { id_projeto: id },
+      include: {
+        membros: {
+          include: { usuario: true }
+        }
+      }
     });
 
     if (!projeto) {
       return res.status(404).json({ error: "Projeto não encontrado" });
     }
 
-    // validar usuário
+    const emailUsuarioLogado = req.user.email;
+    const isGerente = projeto.membros.some(
+      (membro) => membro.usuario.email === emailUsuarioLogado && membro.perfil === 'GERENTE'
+    );
+
+    if (!isGerente) {
+      return res.status(403).json({ error: "Acesso negado: apenas gerentes podem adicionar membros" });
+    }
+
+    // validar usuário a ser convidado
     const usuario = await prisma.usuario.findUnique({
-      where: { id_usuario },
+      where: { email },
     });
 
     if (!usuario) {
-      return res.status(404).json({ error: "Usuário não encontrado" });
+      return res.status(404).json({ error: "O usuário com este e-mail ainda não se cadastrou/logou no sistema." });
     }
 
     // evitar duplicidade
@@ -269,7 +283,7 @@ export const adicionarMembro = async (req, res) => {
       where: {
         id_projeto_id_usuario: {
           id_projeto: id,
-          id_usuario,
+          id_usuario: usuario.id_usuario,
         },
       },
     });
@@ -284,14 +298,114 @@ export const adicionarMembro = async (req, res) => {
     const membro = await prisma.membroProjeto.create({
       data: {
         id_projeto: id,
-        id_usuario,
+        id_usuario: usuario.id_usuario,
         perfil,
       },
+      include: {
+        usuario: true
+      }
     });
 
     return res.status(201).json(membro);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Erro ao adicionar membro" });
+  }
+};
+
+/* =========================
+   REMOVER MEMBRO
+========================= */
+export const removerMembro = async (req, res) => {
+  const { id, idUsuario } = req.params;
+
+  try {
+    const projeto = await prisma.projeto.findUnique({
+      where: { id_projeto: id },
+      include: {
+        membros: {
+          include: { usuario: true }
+        }
+      }
+    });
+
+    if (!projeto) {
+      return res.status(404).json({ error: "Projeto não encontrado" });
+    }
+
+    const emailUsuarioLogado = req.user.email;
+    const isGerente = projeto.membros.some(
+      (membro) => membro.usuario.email === emailUsuarioLogado && membro.perfil === 'GERENTE'
+    );
+
+    if (!isGerente) {
+      return res.status(403).json({ error: "Acesso negado: apenas gerentes podem remover membros" });
+    }
+
+    await prisma.membroProjeto.delete({
+      where: {
+        id_projeto_id_usuario: {
+          id_projeto: id,
+          id_usuario: idUsuario
+        }
+      }
+    });
+
+    return res.json({ mensagem: "Membro removido com sucesso" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Erro ao remover membro" });
+  }
+};
+
+/* =========================
+   ATUALIZAR PERFIL DO MEMBRO
+========================= */
+export const atualizarMembro = async (req, res) => {
+  const { id, idUsuario } = req.params;
+  const { perfil } = req.body;
+
+  try {
+    const projeto = await prisma.projeto.findUnique({
+      where: { id_projeto: id },
+      include: {
+        membros: {
+          include: { usuario: true }
+        }
+      }
+    });
+
+    if (!projeto) {
+      return res.status(404).json({ error: "Projeto não encontrado" });
+    }
+
+    const emailUsuarioLogado = req.user.email;
+    const isGerente = projeto.membros.some(
+      (membro) => membro.usuario.email === emailUsuarioLogado && membro.perfil === 'GERENTE'
+    );
+
+    if (!isGerente) {
+      return res.status(403).json({ error: "Acesso negado: apenas gerentes podem atualizar perfis de membros" });
+    }
+
+    const membroAtualizado = await prisma.membroProjeto.update({
+      where: {
+        id_projeto_id_usuario: {
+          id_projeto: id,
+          id_usuario: idUsuario
+        }
+      },
+      data: {
+        perfil
+      },
+      include: {
+        usuario: true
+      }
+    });
+
+    return res.json(membroAtualizado);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Erro ao atualizar membro" });
   }
 };

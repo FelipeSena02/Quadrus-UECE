@@ -60,6 +60,42 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
+  // Estados do modal de convite
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePerfil, setInvitePerfil] = useState('DEV');
+  const [invitingMember, setInvitingMember] = useState(false);
+
+  // Estados do autocomplete de usuários
+  const [allUsers, setAllUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [searchName, setSearchName] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  React.useEffect(() => {
+    if (isInviteModalOpen) {
+      const fetchUsers = async () => {
+        setLoadingUsers(true);
+        try {
+          const res = await api.get('/api/usuarios');
+          setAllUsers(res.data);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoadingUsers(false);
+        }
+      };
+      fetchUsers();
+    } else {
+      setSearchName('');
+      setSelectedUser(null);
+      setInviteEmail('');
+      setInvitePerfil('DEV');
+      setShowDropdown(false);
+    }
+  }, [isInviteModalOpen]);
+
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
     if (!isManager) return;
@@ -99,6 +135,64 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
     } catch (err) {
       console.error(err);
       alert('Erro ao excluir projeto.');
+    }
+  };
+
+  const handleInviteMember = async (e) => {
+    e.preventDefault();
+    if (!isManager) return;
+    setInvitingMember(true);
+    try {
+      const res = await api.post(`/api/projetos/${project.id_projeto}/membros`, {
+        email: inviteEmail,
+        perfil: invitePerfil
+      });
+      const updatedProject = {
+        ...project,
+        membros: [...(project.membros || []), res.data]
+      };
+      onUpdateProject(updatedProject);
+      setIsInviteModalOpen(false);
+      setInviteEmail('');
+      setInvitePerfil('DEV');
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.error || 'Erro ao convidar membro.');
+    } finally {
+      setInvitingMember(false);
+    }
+  };
+
+  const handleUpdateMemberProfile = async (idUsuario, newPerfil) => {
+    if (!isManager) return;
+    try {
+      const res = await api.patch(`/api/projetos/${project.id_projeto}/membros/${idUsuario}`, {
+        perfil: newPerfil
+      });
+      const updatedProject = {
+        ...project,
+        membros: project.membros.map(m => m.id_usuario === idUsuario ? res.data : m)
+      };
+      onUpdateProject(updatedProject);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao atualizar perfil do membro.');
+    }
+  };
+
+  const handleRemoveMember = async (idUsuario) => {
+    if (!isManager) return;
+    if (!confirm('Tem certeza que deseja remover este membro do projeto?')) return;
+    try {
+      await api.delete(`/api/projetos/${project.id_projeto}/membros/${idUsuario}`);
+      const updatedProject = {
+        ...project,
+        membros: project.membros.filter(m => m.id_usuario !== idUsuario)
+      };
+      onUpdateProject(updatedProject);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao remover membro.');
     }
   };
 
@@ -681,6 +775,70 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                   </div>
                 </form>
 
+                {/* Seção: Membros da Equipe */}
+                <div className="pt-6 border-t border-slate-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                      <UserPlus size={16} /> Membros da Equipe
+                    </h3>
+                    <button
+                      onClick={() => setIsInviteModalOpen(true)}
+                      className="text-xs font-bold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                    >
+                      <Plus size={14} /> Convidar Membro
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                    <ul className="divide-y divide-slate-200 max-h-64 overflow-y-auto">
+                      {members.map((m) => (
+                        <li key={m.id_usuario} className="p-3 flex items-center justify-between hover:bg-slate-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${m.nome}`}
+                              alt={m.nome}
+                              className="w-8 h-8 rounded-full border border-slate-300 bg-white"
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-slate-800">{m.nome}</span>
+                              <span className="text-xs text-slate-500">{m.email || 'Email não disponível'}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                            {isManager && m.email !== currentUserEmail ? (
+                              <>
+                                <select
+                                  value={m.perfil}
+                                  onChange={(e) => handleUpdateMemberProfile(m.id_usuario, e.target.value)}
+                                  className="text-xs font-bold px-2 py-1 rounded-lg bg-white border border-slate-300 text-slate-700 outline-none hover:border-brand-300 focus:border-brand-500 transition-all cursor-pointer"
+                                >
+                                  <option value="ADMIN">ADMIN</option>
+                                  <option value="GERENTE">GERENTE</option>
+                                  <option value="PO">PO</option>
+                                  <option value="DEV">DEV</option>
+                                  <option value="TESTER">TESTER</option>
+                                </select>
+                                <button
+                                  onClick={() => handleRemoveMember(m.id_usuario)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Remover membro"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-200 text-slate-700 border border-slate-300">
+                                {m.perfil}
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
                 {/* Área de Perigo (Danger Zone) */}
                 <div className="pt-6 border-t border-slate-200">
                   <h3 className="text-sm font-bold text-rose-600 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -918,6 +1076,136 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                 Sim, Excluir Definitivamente
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================= MODAL DE CONVITE DE MEMBRO ================================= */}
+      {isInviteModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl relative overflow-hidden text-left p-6 md:p-8 animate-scale-up">
+            
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+              <div>
+                <h2 className="text-lg font-extrabold text-brand-700 flex items-center gap-2">
+                  <UserPlus size={18} />
+                  Convidar Membro
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">Adicione um novo colega ao projeto.</p>
+              </div>
+              <button
+                onClick={() => setIsInviteModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleInviteMember} className="space-y-4">
+              <div className="space-y-1.5 relative">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Buscar Usuário (Nome)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={searchName}
+                  onChange={(e) => {
+                    setSearchName(e.target.value);
+                    setSelectedUser(null);
+                    setInviteEmail('');
+                    setShowDropdown(true);
+                  }}
+                  onFocus={() => setShowDropdown(true)}
+                  placeholder="Digite o nome do usuário..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all placeholder-slate-400"
+                />
+                
+                {/* Dropdown de Autocomplete */}
+                {showDropdown && searchName.length > 0 && !selectedUser && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                    {loadingUsers ? (
+                      <div className="p-3 text-sm text-slate-500 text-center flex items-center justify-center gap-2">
+                        <Loader2 size={14} className="animate-spin" /> Carregando...
+                      </div>
+                    ) : (
+                      allUsers
+                        .filter(u => 
+                          u.nome.toLowerCase().includes(searchName.toLowerCase()) &&
+                          !project.membros?.some(m => m.usuario?.email === u.email)
+                        )
+                        .map(u => (
+                          <button
+                            key={u.id_usuario}
+                            type="button"
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0 flex flex-col"
+                            onClick={() => {
+                              setSelectedUser(u);
+                              setSearchName(u.nome);
+                              setInviteEmail(u.email);
+                              setShowDropdown(false);
+                            }}
+                          >
+                            <span className="font-bold text-slate-700">{u.nome}</span>
+                            <span className="text-xs text-slate-500">{u.email}</span>
+                          </button>
+                        ))
+                    )}
+                    {!loadingUsers && allUsers.filter(u => u.nome.toLowerCase().includes(searchName.toLowerCase())).length === 0 && (
+                      <div className="p-3 text-sm text-slate-500 text-center">Nenhum usuário encontrado.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  E-mail do Usuário
+                </label>
+                <input
+                  type="email"
+                  required
+                  disabled
+                  value={inviteEmail}
+                  placeholder="Selecione um usuário acima"
+                  className="w-full bg-slate-100 border border-slate-200 rounded-xl py-2.5 px-4 text-sm text-slate-500 cursor-not-allowed"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Perfil de Acesso
+                </label>
+                <select
+                  value={invitePerfil}
+                  onChange={(e) => setInvitePerfil(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-slate-700 appearance-none"
+                >
+                  <option value="ADMIN">ADMIN</option>
+                  <option value="PO">PO</option>
+                  <option value="DEV">DEV</option>
+                  <option value="TESTER">TESTER</option>
+                </select>
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsInviteModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={invitingMember}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-sm transition-all shadow-md active:scale-95 flex items-center gap-2 disabled:opacity-50"
+                >
+                  {invitingMember && <Loader2 size={16} className="animate-spin" />}
+                  Convidar
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
