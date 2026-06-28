@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../utils/api.js';
 import {
   FolderKanban,
@@ -21,6 +21,48 @@ import {
   Archive,
   Loader2
 } from 'lucide-react';
+
+// Componente de Toast para notificações inline
+function Toast({ message, type, onClose }) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 4000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const styles = {
+    success: 'bg-emerald-50 border-emerald-300 text-emerald-800',
+    error: 'bg-rose-50 border-rose-300 text-rose-800',
+    info: 'bg-blue-50 border-blue-300 text-blue-800',
+  };
+
+  return (
+    <div className={`fixed top-6 right-6 z-[100] px-5 py-3 rounded-xl border shadow-lg text-sm font-semibold animate-scale-up flex items-center gap-2 ${styles[type] || styles.info}`}>
+      {type === 'success' && <CheckCircle2 size={16} />}
+      {type === 'error' && <AlertTriangle size={16} />}
+      <span>{message}</span>
+      <button onClick={onClose} className="ml-2 opacity-60 hover:opacity-100 transition-opacity"><X size={14} /></button>
+    </div>
+  );
+}
+
+// Helper para gerar iniciais de fallback para avatares
+function AvatarWithFallback({ nome, className = '' }) {
+  const initials = (nome || 'U').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+  return (
+    <img
+      src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(nome)}`}
+      alt={nome}
+      className={`${className} bg-white`}
+      onError={(e) => {
+        e.target.style.display = 'none';
+        const fallback = document.createElement('div');
+        fallback.className = `${className} bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-bold`;
+        fallback.textContent = initials;
+        e.target.parentNode.insertBefore(fallback, e.target);
+      }}
+    />
+  );
+}
 
 export default function KanbanBoard({ project, onUpdateProject, userDisplayName, currentUserEmail, onProjectAction }) {
   // Estado para controlar a aba ativa no Menu Lateral
@@ -60,41 +102,73 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
+  // Toast notification state
+  const [toast, setToast] = useState(null);
+  const showToast = useCallback((message, type = 'info') => {
+    setToast({ message, type });
+  }, []);
+
   // Estados do modal de convite
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePerfil, setInvitePerfil] = useState('DEV');
   const [invitingMember, setInvitingMember] = useState(false);
 
-  // Estados do autocomplete de usuários
-  const [allUsers, setAllUsers] = useState([]);
+  // Estados do autocomplete de usuários (busca server-side)
+  const [searchResults, setSearchResults] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [searchName, setSearchName] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const searchTimerRef = useRef(null);
 
-  React.useEffect(() => {
-    if (isInviteModalOpen) {
-      const fetchUsers = async () => {
-        setLoadingUsers(true);
-        try {
-          const res = await api.get('/api/usuarios');
-          setAllUsers(res.data);
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setLoadingUsers(false);
-        }
-      };
-      fetchUsers();
-    } else {
+  // Modal de confirmação para remoção de membro
+  const [isRemoveMemberModalOpen, setIsRemoveMemberModalOpen] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState(null);
+
+  // Reset invite modal state when closed
+  useEffect(() => {
+    if (!isInviteModalOpen) {
       setSearchName('');
       setSelectedUser(null);
       setInviteEmail('');
       setInvitePerfil('DEV');
       setShowDropdown(false);
+      setSearchResults([]);
     }
   }, [isInviteModalOpen]);
+
+  // Debounced server-side search for users
+  const handleSearchUsers = useCallback((query) => {
+    setSearchName(query);
+    setSelectedUser(null);
+    setInviteEmail('');
+    setShowDropdown(true);
+
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    searchTimerRef.current = setTimeout(async () => {
+      setLoadingUsers(true);
+      try {
+        const res = await api.get(`/api/usuarios/buscar?q=${encodeURIComponent(query.trim())}&limit=20`);
+        // Filter out users already in the project
+        const filtered = res.data.filter(
+          u => !project.membros?.some(m => m.usuario?.email === u.email)
+        );
+        setSearchResults(filtered);
+      } catch (err) {
+        console.error(err);
+        setSearchResults([]);
+      } finally {
+        setLoadingUsers(false);
+      }
+    }, 300);
+  }, [project.membros]);
 
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
@@ -107,10 +181,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
         data_prazo: editPrazo ? new Date(editPrazo).toISOString() : null,
       });
       onUpdateProject(res.data);
-      alert('Configurações salvas com sucesso!');
+      showToast('Configurações salvas com sucesso!', 'success');
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar as configurações.');
+      showToast('Erro ao salvar as configurações.', 'error');
     } finally {
       setUpdatingSettings(false);
     }
@@ -123,7 +197,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       if (onProjectAction) onProjectAction();
     } catch (err) {
       console.error(err);
-      alert('Erro ao alterar status de arquivamento do projeto.');
+      showToast('Erro ao alterar status de arquivamento do projeto.', 'error');
     }
   };
 
@@ -134,7 +208,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       if (onProjectAction) onProjectAction();
     } catch (err) {
       console.error(err);
-      alert('Erro ao excluir projeto.');
+      showToast('Erro ao excluir projeto.', 'error');
     }
   };
 
@@ -153,11 +227,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       };
       onUpdateProject(updatedProject);
       setIsInviteModalOpen(false);
-      setInviteEmail('');
-      setInvitePerfil('DEV');
+      showToast('Membro convidado com sucesso!', 'success');
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.error || 'Erro ao convidar membro.');
+      showToast(err.response?.data?.error || 'Erro ao convidar membro.', 'error');
     } finally {
       setInvitingMember(false);
     }
@@ -174,25 +247,34 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
         membros: project.membros.map(m => m.id_usuario === idUsuario ? res.data : m)
       };
       onUpdateProject(updatedProject);
+      showToast('Perfil do membro atualizado.', 'success');
     } catch (err) {
       console.error(err);
-      alert('Erro ao atualizar perfil do membro.');
+      showToast(err.response?.data?.error || 'Erro ao atualizar perfil do membro.', 'error');
     }
   };
 
-  const handleRemoveMember = async (idUsuario) => {
-    if (!isManager) return;
-    if (!confirm('Tem certeza que deseja remover este membro do projeto?')) return;
+  const confirmRemoveMember = (member) => {
+    setMemberToRemove(member);
+    setIsRemoveMemberModalOpen(true);
+  };
+
+  const handleRemoveMember = async () => {
+    if (!isManager || !memberToRemove) return;
     try {
-      await api.delete(`/api/projetos/${project.id_projeto}/membros/${idUsuario}`);
+      await api.delete(`/api/projetos/${project.id_projeto}/membros/${memberToRemove.id_usuario}`);
       const updatedProject = {
         ...project,
-        membros: project.membros.filter(m => m.id_usuario !== idUsuario)
+        membros: project.membros.filter(m => m.id_usuario !== memberToRemove.id_usuario)
       };
       onUpdateProject(updatedProject);
+      showToast('Membro removido com sucesso.', 'success');
     } catch (err) {
       console.error(err);
-      alert('Erro ao remover membro.');
+      showToast(err.response?.data?.error || 'Erro ao remover membro.', 'error');
+    } finally {
+      setIsRemoveMemberModalOpen(false);
+      setMemberToRemove(null);
     }
   };
 
@@ -201,6 +283,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
   const members = (project.membros || []).map(m => ({
     id_usuario: m.usuario?.id_usuario || m.id_usuario,
     nome: m.usuario?.nome || m.nome || 'Membro',
+    email: m.usuario?.email || '',
     perfil: m.perfil || 'DEV',
   }));
 
@@ -325,6 +408,9 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
   return (
     <div className="flex flex-col md:flex-row min-h-[calc(100vh-80px)] -mx-4 md:-mx-6 -mt-4 md:-mt-6 relative">
+
+      {/* Toast Notifications */}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       {/* Botão de Menu Flutuante para Mobile */}
       <button 
@@ -794,11 +880,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                       {members.map((m) => (
                         <li key={m.id_usuario} className="p-3 flex items-center justify-between hover:bg-slate-100 transition-colors">
                           <div className="flex items-center gap-3">
-                            <img
-                              src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${m.nome}`}
-                              alt={m.nome}
-                              className="w-8 h-8 rounded-full border border-slate-300 bg-white"
-                            />
+                            <AvatarWithFallback nome={m.nome} className="w-8 h-8 rounded-full border border-slate-300" />
                             <div className="flex flex-col">
                               <span className="text-sm font-bold text-slate-800">{m.nome}</span>
                               <span className="text-xs text-slate-500">{m.email || 'Email não disponível'}</span>
@@ -820,7 +902,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                                   <option value="TESTER">TESTER</option>
                                 </select>
                                 <button
-                                  onClick={() => handleRemoveMember(m.id_usuario)}
+                                  onClick={() => confirmRemoveMember(m)}
                                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                                   title="Remover membro"
                                 >
@@ -1110,31 +1192,21 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                   type="text"
                   required
                   value={searchName}
-                  onChange={(e) => {
-                    setSearchName(e.target.value);
-                    setSelectedUser(null);
-                    setInviteEmail('');
-                    setShowDropdown(true);
-                  }}
+                  onChange={(e) => handleSearchUsers(e.target.value)}
                   onFocus={() => setShowDropdown(true)}
-                  placeholder="Digite o nome do usuário..."
+                  placeholder="Digite ao menos 2 caracteres..."
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all placeholder-slate-400"
                 />
                 
                 {/* Dropdown de Autocomplete */}
-                {showDropdown && searchName.length > 0 && !selectedUser && (
+                {showDropdown && searchName.length >= 2 && !selectedUser && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
                     {loadingUsers ? (
                       <div className="p-3 text-sm text-slate-500 text-center flex items-center justify-center gap-2">
-                        <Loader2 size={14} className="animate-spin" /> Carregando...
+                        <Loader2 size={14} className="animate-spin" /> Buscando...
                       </div>
                     ) : (
-                      allUsers
-                        .filter(u => 
-                          u.nome.toLowerCase().includes(searchName.toLowerCase()) &&
-                          !project.membros?.some(m => m.usuario?.email === u.email)
-                        )
-                        .map(u => (
+                      searchResults.map(u => (
                           <button
                             key={u.id_usuario}
                             type="button"
@@ -1151,7 +1223,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                           </button>
                         ))
                     )}
-                    {!loadingUsers && allUsers.filter(u => u.nome.toLowerCase().includes(searchName.toLowerCase())).length === 0 && (
+                    {!loadingUsers && searchResults.length === 0 && (
                       <div className="p-3 text-sm text-slate-500 text-center">Nenhum usuário encontrado.</div>
                     )}
                   </div>
@@ -1182,6 +1254,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all text-slate-700 appearance-none"
                 >
                   <option value="ADMIN">ADMIN</option>
+                  <option value="GERENTE">GERENTE</option>
                   <option value="PO">PO</option>
                   <option value="DEV">DEV</option>
                   <option value="TESTER">TESTER</option>
@@ -1206,6 +1279,35 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================= MODAL DE REMOÇÃO DE MEMBRO ================================= */}
+      {isRemoveMemberModalOpen && memberToRemove && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 animate-scale-up text-center shadow-2xl">
+            <div className="mx-auto w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-4">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-lg font-extrabold text-slate-800 mb-2">Remover membro do projeto?</h3>
+            <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+              Tem certeza que deseja remover <strong>{memberToRemove.nome}</strong> do projeto? O membro perderá acesso a todas as tarefas e recursos.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => { setIsRemoveMemberModalOpen(false); setMemberToRemove(null); }}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleRemoveMember}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 text-white font-bold text-sm hover:bg-rose-700 shadow-md active:scale-95 transition-all"
+              >
+                Sim, Remover
+              </button>
+            </div>
           </div>
         </div>
       )}

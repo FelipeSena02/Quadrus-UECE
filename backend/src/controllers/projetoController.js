@@ -1,5 +1,8 @@
 import prisma from "../lib/prisma.js";
 
+// Perfis válidos do sistema
+const PERFIS_VALIDOS = ['ADMIN', 'GERENTE', 'PO', 'DEV', 'TESTER'];
+
 /* =========================
    LISTAR PROJETOS
 ========================= */
@@ -269,6 +272,10 @@ export const adicionarMembro = async (req, res) => {
       return res.status(403).json({ error: "Acesso negado: apenas gerentes podem adicionar membros" });
     }
 
+    if (!perfil || !PERFIS_VALIDOS.includes(perfil)) {
+      return res.status(400).json({ error: `Perfil inválido. Perfis válidos: ${PERFIS_VALIDOS.join(', ')}` });
+    }
+
     // validar usuário a ser convidado
     const usuario = await prisma.usuario.findUnique({
       where: { email },
@@ -342,6 +349,15 @@ export const removerMembro = async (req, res) => {
       return res.status(403).json({ error: "Acesso negado: apenas gerentes podem remover membros" });
     }
 
+    // Impedir remoção do último gerente do projeto
+    const membroAlvo = projeto.membros.find(m => m.id_usuario === idUsuario);
+    if (membroAlvo && membroAlvo.perfil === 'GERENTE') {
+      const totalGerentes = projeto.membros.filter(m => m.perfil === 'GERENTE').length;
+      if (totalGerentes <= 1) {
+        return res.status(400).json({ error: "Não é possível remover o último gerente do projeto. Promova outro membro a gerente antes." });
+      }
+    }
+
     await prisma.membroProjeto.delete({
       where: {
         id_projeto_id_usuario: {
@@ -386,6 +402,10 @@ export const atualizarMembro = async (req, res) => {
 
     if (!isGerente) {
       return res.status(403).json({ error: "Acesso negado: apenas gerentes podem atualizar perfis de membros" });
+    }
+
+    if (!perfil || !PERFIS_VALIDOS.includes(perfil)) {
+      return res.status(400).json({ error: `Perfil inválido. Perfis válidos: ${PERFIS_VALIDOS.join(', ')}` });
     }
 
     const membroAtualizado = await prisma.membroProjeto.update({

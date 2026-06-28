@@ -298,6 +298,7 @@ export default function App() {
         ) : (
           /* Novo Quadro Kanban Interativo */
           <KanbanBoard
+            key={selectedProject.id_projeto}
             project={selectedProject}
             onUpdateProject={handleUpdateProject}
             onProjectAction={() => { setSelectedProject(null); fetchProjects(showArchived); }}
