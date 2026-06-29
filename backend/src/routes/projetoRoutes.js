@@ -19,6 +19,7 @@ router.get("/meus", verifyFirebaseToken, listarProjetosDoUsuario);
 router.get("/:id", verifyFirebaseToken, obterProjeto);
 router.post("/", verifyFirebaseToken, criarProjeto);
 router.patch("/:id", verifyFirebaseToken, atualizarProjeto);
+router.put("/:id", verifyFirebaseToken, atualizarProjeto);
 router.delete("/:id", verifyFirebaseToken, deletarProjeto);
 router.post("/:id/membros", verifyFirebaseToken, adicionarMembro);
 router.delete("/:id/membros/:idUsuario", verifyFirebaseToken, removerMembro);
