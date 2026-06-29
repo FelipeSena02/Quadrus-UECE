@@ -8,6 +8,7 @@ import {
   excluirSprint,
   iniciarSprint,
   finalizarSprint,
+  migrarCards,
 } from "../controllers/sprintController.js";
 
 const router = express.Router();
@@ -32,5 +33,8 @@ router.patch("/sprints/:id/iniciar", verifyFirebaseToken, iniciarSprint);
 
 // Finalizar sprint
 router.patch("/sprints/:id/finalizar", verifyFirebaseToken, finalizarSprint);
+
+// Migrar cards para uma sprint
+router.post("/sprints/:id/migrar-cards", verifyFirebaseToken, migrarCards);
 
 export default router;

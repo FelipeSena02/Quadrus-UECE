@@ -8,7 +8,7 @@ const STATUS_SPRINT_VALIDOS = ["PLANEJAMENTO", "ATIVA", "CONCLUIDA"];
  ========================= */
 export const criarSprint = async (req, res) => {
   const { id } = req.params; // id do projeto
-  const { nome, data_inicio, data_fim } = req.body;
+  const { nome, data_inicio, data_fim, objetivo } = req.body;
 
   try {
     if (!nome) {
@@ -50,8 +50,19 @@ export const criarSprint = async (req, res) => {
       data: {
         id_projeto: id,
         nome,
+        objetivo: objetivo || null,
         data_inicio: data_inicio ? new Date(data_inicio) : null,
         data_fim: data_fim ? new Date(data_fim) : null,
+      },
+      include: {
+        cards: {
+          where: {
+            deletado_em: null,
+          },
+          include: {
+            responsavel: true,
+          },
+        },
       },
     });
 
@@ -96,7 +107,14 @@ export const listarSprints = async (req, res) => {
         id_projeto: id,
       },
       include: {
-        cards: true,
+        cards: {
+          where: {
+            deletado_em: null,
+          },
+          include: {
+            responsavel: true,
+          },
+        },
       },
       orderBy: {
         createdAt: "asc",
@@ -126,6 +144,9 @@ export const buscarSprint = async (req, res) => {
       include: {
         projeto: true,
         cards: {
+          where: {
+            deletado_em: null,
+          },
           include: {
             responsavel: true,
           },
@@ -161,7 +182,7 @@ export const buscarSprint = async (req, res) => {
  ========================= */
 export const atualizarSprint = async (req, res) => {
   const { id } = req.params;
-  const { nome, data_inicio, data_fim, status } = req.body;
+  const { nome, data_inicio, data_fim, status, objetivo } = req.body;
 
   try {
     const sprint = await prisma.sprint.findUnique({
@@ -211,6 +232,17 @@ export const atualizarSprint = async (req, res) => {
         ...(data_inicio !== undefined && { data_inicio: data_inicio ? new Date(data_inicio) : null }),
         ...(data_fim !== undefined && { data_fim: data_fim ? new Date(data_fim) : null }),
         ...(status !== undefined && { status }),
+        ...(objetivo !== undefined && { objetivo }),
+      },
+      include: {
+        cards: {
+          where: {
+            deletado_em: null,
+          },
+          include: {
+            responsavel: true,
+          },
+        },
       },
     });
 
@@ -323,6 +355,16 @@ export const iniciarSprint = async (req, res) => {
         status: "ATIVA",
         data_inicio: new Date(),
       },
+      include: {
+        cards: {
+          where: {
+            deletado_em: null,
+          },
+          include: {
+            responsavel: true,
+          },
+        },
+      },
     });
 
     return res.json(sprintAtualizada);
@@ -376,6 +418,16 @@ export const finalizarSprint = async (req, res) => {
         status: "CONCLUIDA",
         data_fim: new Date(),
       },
+      include: {
+        cards: {
+          where: {
+            deletado_em: null,
+          },
+          include: {
+            responsavel: true,
+          },
+        },
+      },
     });
 
     return res.json(sprintAtualizada);
@@ -384,5 +436,50 @@ export const finalizarSprint = async (req, res) => {
     return res.status(500).json({
       error: "Erro ao finalizar sprint",
     });
+  }
+};
+
+/* =========================
+   MIGRAR CARDS PARA UMA SPRINT
+ ========================= */
+export const migrarCards = async (req, res) => {
+  const { id } = req.params; // id da sprint destino
+  const { cardIds } = req.body;
+
+  if (!cardIds || !Array.isArray(cardIds)) {
+    return res.status(400).json({ error: "cardIds deve ser um array" });
+  }
+
+  try {
+    const sprintDestino = await prisma.sprint.findUnique({
+      where: { id_sprint: id },
+    });
+
+    if (!sprintDestino) {
+      return res.status(404).json({ error: "Sprint de destino não encontrada" });
+    }
+
+    // Controle de Acesso: Verificar se o usuário pertence ao projeto da sprint destino
+    const membro = await obterMembroProjeto(sprintDestino.id_projeto, req.user.email);
+    if (!membro) {
+      return res.status(403).json({
+        error: "Acesso negado: você não é membro deste projeto",
+      });
+    }
+
+    await prisma.card.updateMany({
+      where: {
+        id_card: { in: cardIds },
+        id_projeto: sprintDestino.id_projeto,
+      },
+      data: {
+        id_sprint: id,
+      },
+    });
+
+    return res.json({ message: "Cards migrados com sucesso" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Erro ao migrar cards" });
   }
 };
