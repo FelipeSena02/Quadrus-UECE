@@ -536,7 +536,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
   };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-[calc(100vh-80px)] -mx-4 md:-mx-6 -mt-4 md:-mt-6 relative">
+    <div className="flex flex-col md:flex-row flex-grow md:h-full md:overflow-hidden -mx-6 md:-mx-8 relative">
 
       {/* Toast Notifications */}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -552,7 +552,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       {/* ================= 1. MENU LATERAL (SIDEBAR) ================= */}
       <aside className={`
         fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 pt-20 px-4 flex flex-col justify-between transition-transform duration-300 ease-in-out
-        md:translate-x-0 md:static md:h-auto md:pt-6
+        md:translate-x-0 md:static md:h-full md:pt-6
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="space-y-6">
@@ -571,50 +571,50 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
           <nav className="space-y-1.5 text-left">
             <button
               onClick={() => { setActiveTab('board'); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${
                 activeTab === 'board'
-                  ? 'bg-brand-50 text-brand-700 shadow-sm border-l-4 border-brand-600'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                  ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
               }`}
             >
               <FolderKanban size={18} />
-              <span>Painel de Tarefas</span>
+              <span className="whitespace-nowrap">Painel de Tarefas</span>
             </button>
 
             <button
               onClick={() => { setActiveTab('sprint'); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${
                 activeTab === 'sprint'
-                  ? 'bg-brand-50 text-brand-700 shadow-sm border-l-4 border-brand-600'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                  ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
               }`}
             >
               <Calendar size={18} />
-              <span>Planejamento de Sprint</span>
+              <span className="whitespace-nowrap">Planejamento de Sprint</span>
             </button>
 
             <button
               onClick={() => { setActiveTab('metrics'); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${
                 activeTab === 'metrics'
-                  ? 'bg-brand-50 text-brand-700 shadow-sm border-l-4 border-brand-600'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                  ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
               }`}
             >
               <TrendingUp size={18} />
-              <span>Métricas</span>
+              <span className="whitespace-nowrap">Métricas</span>
             </button>
 
             <button
               onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${
                 activeTab === 'settings'
-                  ? 'bg-brand-50 text-brand-700 shadow-sm border-l-4 border-brand-600'
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                  ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
               }`}
             >
               <Settings size={18} />
-              <span>Configurações</span>
+              <span className="whitespace-nowrap">Configurações</span>
             </button>
           </nav>
         </div>
@@ -637,7 +637,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       )}
 
       {/* ================= 2. CONTEÚDO PRINCIPAL DA TELA ================= */}
-      <main className="flex-1 p-6 md:p-8 flex flex-col bg-slate-50 overflow-x-auto">
+      <main className="flex-1 p-6 md:p-8 flex flex-col bg-slate-50 overflow-y-auto h-full overflow-x-auto min-h-0 text-left">
         
         {activeTab === 'board' ? (
           <>

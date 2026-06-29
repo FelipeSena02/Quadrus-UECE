@@ -175,7 +175,7 @@ export default function App() {
   const userDisplayName = currentUser.displayName || currentUser.email.split('@')[0];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+    <div className={`min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans ${selectedProject ? 'h-screen overflow-hidden' : ''}`}>
 
       {/* Header Superior Principal */}
       <header className="border-b border-slate-200 bg-white sticky top-0 z-50 px-6 py-4 flex items-center justify-between shadow-sm">
@@ -331,7 +331,7 @@ export default function App() {
       </header>
 
       {/* Conteúdo Principal */}
-      <main className={`flex-1 w-full mx-auto p-4 md:p-6 transition-all duration-300 ${selectedProject ? 'max-w-full px-6 md:px-8' : 'max-w-7xl'}`}>
+      <main className={`flex-1 w-full mx-auto transition-all duration-300 ${selectedProject ? 'max-w-full px-6 md:px-8 flex flex-col min-h-0 overflow-hidden' : 'max-w-7xl p-4 md:p-6'}`}>
         {!selectedProject ? (
           // Passamos a lista de projetos, a função de criação e o nome do usuário logado
           <ProjectList
@@ -357,19 +357,21 @@ export default function App() {
       </main>
 
       {/* Rodapé */}
-      <footer className="border-t border-slate-200 py-4 px-8 flex items-center justify-between text-xs text-slate-400 bg-white">
-        <div>&copy; {new Date().getFullYear()} Quadrus. Todos os direitos reservados.</div>
-        <div className="flex items-center gap-3 font-medium">
-          <span className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${backendStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-            API: {backendStatus}
-          </span>
-          <span className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${socketStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-            Realtime: {socketStatus}
-          </span>
-        </div>
-      </footer>
+      {!selectedProject && (
+        <footer className="border-t border-slate-200 py-4 px-8 flex items-center justify-between text-xs text-slate-400 bg-white">
+          <div>&copy; {new Date().getFullYear()} Quadrus. Todos os direitos reservados.</div>
+          <div className="flex items-center gap-3 font-medium">
+            <span className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${backendStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+              API: {backendStatus}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${socketStatus === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+              Realtime: {socketStatus}
+            </span>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
