@@ -54,6 +54,7 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST']
   }
 });
+app.set('io', io);
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);

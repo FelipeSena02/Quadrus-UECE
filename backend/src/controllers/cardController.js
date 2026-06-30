@@ -376,14 +376,26 @@ export const atualizarStatusCard = async (req, res) => {
       });
     }
 
+    // Auto-atribuição: se o card não tem responsável, atribui ao membro que moveu
+    const deveAtribuir = !card.id_responsavel;
+
     const cardAtualizado = await prisma.card.update({
       where: { id_card: id },
-      data: { status },
+      data: {
+        status,
+        ...(deveAtribuir && { id_responsavel: membro.id_usuario }),
+      },
       include: {
         responsavel: true,
         sprint: true,
       },
     });
+
+    // Emitir evento Socket.io para sincronização em tempo real
+    const io = req.app.get('io');
+    if (io) {
+      io.to(card.id_projeto).emit('card_moved', cardAtualizado);
+    }
 
     return res.json(cardAtualizado);
   } catch (error) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../utils/api.js';
+import { socket, joinProjectRoom, leaveProjectRoom } from '../utils/socket.js';
 import {
   FolderKanban,
   Calendar,
@@ -66,6 +67,40 @@ function AvatarWithFallback({ nome, className = '' }) {
 }
 
 export default function KanbanBoard({ project, onUpdateProject, userDisplayName, currentUserEmail, onProjectAction }) {
+  // Ref para acessar o projeto atualizado dentro de callbacks de socket
+  const projectRef = useRef(project);
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
+
+  // Socket.io: entrar na sala do projeto e escutar eventos de movimentação
+  useEffect(() => {
+    joinProjectRoom(project.id_projeto);
+
+    const handleCardMoved = (updatedCard) => {
+      const currentProject = projectRef.current;
+      if (updatedCard.id_projeto !== currentProject.id_projeto) return;
+
+      const currentCards = currentProject.cards || [];
+      const exists = currentCards.some(c => c.id_card === updatedCard.id_card);
+      const updatedCards = exists
+        ? currentCards.map(c => c.id_card === updatedCard.id_card ? updatedCard : c)
+        : [...currentCards, updatedCard];
+
+      onUpdateProject({
+        ...currentProject,
+        cards: updatedCards,
+      });
+    };
+
+    socket.on('card_moved', handleCardMoved);
+
+    return () => {
+      leaveProjectRoom(project.id_projeto);
+      socket.off('card_moved', handleCardMoved);
+    };
+  }, [project.id_projeto, onUpdateProject]);
+
   // Estado para controlar a aba ativa no Menu Lateral
   const [activeTab, setActiveTab] = useState('board'); // 'board', 'sprint', 'metrics', 'settings'
 
@@ -350,41 +385,128 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
     const cardId = e.dataTransfer.getData('text/plain');
     if (!cardId) return;
 
-    // Atualiza o status do cartão movido no projeto ativo (otimistic update)
+    const cardObj = (project.cards || []).find(c => c.id_card === cardId);
+    if (!cardObj || cardObj.status === targetStatus) return;
+
+    // Auto-atribuição otimista: se o card não tem responsável, atribui ao usuário que moveu
+    let optimisticResponsavel = cardObj.responsavel;
+    let optimisticResponsavelId = cardObj.id_responsavel;
+
+    if (!cardObj.id_responsavel) {
+      const currentMember = members.find(m => m.email === currentUserEmail);
+      if (currentMember) {
+        optimisticResponsavel = {
+          id_usuario: currentMember.id_usuario,
+          nome: currentMember.nome,
+          email: currentMember.email,
+        };
+        optimisticResponsavelId = currentMember.id_usuario;
+      }
+    }
+
+    // Salvar estado anterior para rollback
+    const previousCards = project.cards;
+
+    // Atualização otimista
     const updatedCards = project.cards.map(card => {
       if (card.id_card === cardId) {
-        return { ...card, status: targetStatus };
+        return {
+          ...card,
+          status: targetStatus,
+          id_responsavel: optimisticResponsavelId,
+          responsavel: optimisticResponsavel,
+        };
       }
       return card;
     });
 
     onUpdateProject({
       ...project,
-      cards: updatedCards
+      cards: updatedCards,
     });
 
     // Persistir no backend
     api.patch(`/api/cards/${cardId}/status`, { status: targetStatus })
-      .catch(err => console.error('Erro ao persistir movimentação:', err));
+      .then(res => {
+        // Sincronizar com a resposta do servidor (inclui auto-atribuição confirmada)
+        const serverCards = project.cards.map(card =>
+          card.id_card === cardId ? res.data : card
+        );
+        onUpdateProject({
+          ...project,
+          cards: serverCards,
+        });
+      })
+      .catch(err => {
+        console.error('Erro ao persistir movimentação:', err);
+        showToast('Erro ao movimentar card.', 'error');
+        // Rollback
+        onUpdateProject({
+          ...project,
+          cards: previousCards,
+        });
+      });
   };
 
   // Mover cartão via clique (acessibilidade / mobile-friendly)
   const moveCard = (cardId, targetStatus) => {
+    const cardObj = (project.cards || []).find(c => c.id_card === cardId);
+    if (!cardObj || cardObj.status === targetStatus) return;
+
+    // Auto-atribuição otimista
+    let optimisticResponsavel = cardObj.responsavel;
+    let optimisticResponsavelId = cardObj.id_responsavel;
+
+    if (!cardObj.id_responsavel) {
+      const currentMember = members.find(m => m.email === currentUserEmail);
+      if (currentMember) {
+        optimisticResponsavel = {
+          id_usuario: currentMember.id_usuario,
+          nome: currentMember.nome,
+          email: currentMember.email,
+        };
+        optimisticResponsavelId = currentMember.id_usuario;
+      }
+    }
+
+    const previousCards = project.cards;
+
     const updatedCards = project.cards.map(card => {
       if (card.id_card === cardId) {
-        return { ...card, status: targetStatus };
+        return {
+          ...card,
+          status: targetStatus,
+          id_responsavel: optimisticResponsavelId,
+          responsavel: optimisticResponsavel,
+        };
       }
       return card;
     });
 
     onUpdateProject({
       ...project,
-      cards: updatedCards
+      cards: updatedCards,
     });
 
     // Persistir no backend
     api.patch(`/api/cards/${cardId}/status`, { status: targetStatus })
-      .catch(err => console.error('Erro ao persistir movimentação:', err));
+      .then(res => {
+        const serverCards = project.cards.map(card =>
+          card.id_card === cardId ? res.data : card
+        );
+        onUpdateProject({
+          ...project,
+          cards: serverCards,
+        });
+      })
+      .catch(err => {
+        console.error('Erro ao persistir movimentação:', err);
+        showToast('Erro ao movimentar card.', 'error');
+        onUpdateProject({
+          ...project,
+          cards: previousCards,
+        });
+      });
   };
 
   // ================= FILTRO E BUSCA DE CARDS =================
