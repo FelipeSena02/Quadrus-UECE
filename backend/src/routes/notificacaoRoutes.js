@@ -4,6 +4,8 @@ import {
   listarNotificacoes,
   marcarComoLida,
   marcarTodasComoLidas,
+  aceitarConvite,
+  recusarConvite,
 } from "../controllers/notificacaoController.js";
 
 const router = express.Router();
@@ -16,5 +18,9 @@ router.patch("/notificacoes/:id/ler", verifyFirebaseToken, marcarComoLida);
 
 // Marcar todas as notificações como lidas
 router.post("/notificacoes/ler-todas", verifyFirebaseToken, marcarTodasComoLidas);
+
+// Aceitar/Recusar convites de projetos
+router.post("/notificacoes/:id/aceitar", verifyFirebaseToken, aceitarConvite);
+router.post("/notificacoes/:id/recusar", verifyFirebaseToken, recusarConvite);
 
 export default router;

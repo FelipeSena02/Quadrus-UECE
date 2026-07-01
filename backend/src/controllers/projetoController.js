@@ -242,7 +242,7 @@ export const deletarProjeto = async (req, res) => {
 };
 
 /* =========================
-   ADICIONAR MEMBRO
+   ADICIONAR MEMBRO (ENVIAR CONVITE)
 ========================= */
 export const adicionarMembro = async (req, res) => {
   const { id } = req.params;
@@ -264,12 +264,12 @@ export const adicionarMembro = async (req, res) => {
     }
 
     const emailUsuarioLogado = req.user.email;
-    const isGerente = projeto.membros.some(
-      (membro) => membro.usuario.email === emailUsuarioLogado && membro.perfil === 'GERENTE'
+    const canInvite = projeto.membros.some(
+      (membro) => membro.usuario.email === emailUsuarioLogado && (membro.perfil === 'GERENTE' || membro.perfil === 'PO')
     );
 
-    if (!isGerente) {
-      return res.status(403).json({ error: "Acesso negado: apenas gerentes podem adicionar membros" });
+    if (!canInvite) {
+      return res.status(403).json({ error: "Acesso negado: apenas gerentes e POs podem convidar membros" });
     }
 
     if (!perfil || !PERFIS_VALIDOS.includes(perfil)) {
@@ -285,7 +285,7 @@ export const adicionarMembro = async (req, res) => {
       return res.status(404).json({ error: "O usuário com este e-mail ainda não se cadastrou/logou no sistema." });
     }
 
-    // evitar duplicidade
+    // evitar duplicidade - membro ativo
     const membroExistente = await prisma.membroProjeto.findUnique({
       where: {
         id_projeto_id_usuario: {
@@ -301,22 +301,45 @@ export const adicionarMembro = async (req, res) => {
       });
     }
 
-    // criar membro
-    const membro = await prisma.membroProjeto.create({
-      data: {
-        id_projeto: id,
-        id_usuario: usuario.id_usuario,
-        perfil,
+    // evitar duplicidade - convite pendente
+    const convitePendente = await prisma.notificacao.findFirst({
+      where: {
+        id_usuario_destino: usuario.id_usuario,
+        id_projeto_origem: id,
+        lida: false,
       },
-      include: {
-        usuario: true
-      }
     });
 
-    return res.status(201).json(membro);
+    if (convitePendente) {
+      return res.status(400).json({
+        error: "Convite pendente já enviado para este usuário",
+      });
+    }
+
+    // criar notificação de convite
+    const mensagem = `Você foi convidado para participar do projeto "${projeto.nome}" como ${perfil}.`;
+    const notificacao = await prisma.notificacao.create({
+      data: {
+        id_usuario_destino: usuario.id_usuario,
+        id_projeto_origem: id,
+        convite_perfil: perfil,
+        mensagem,
+      },
+    });
+
+    // Emitir notificação em tempo real via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.to(id).emit('nova_notificacao', notificacao);
+    }
+
+    return res.status(201).json({
+      message: "Convite enviado com sucesso",
+      notificacao,
+    });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: "Erro ao adicionar membro" });
+    return res.status(500).json({ error: "Erro ao convidar membro" });
   }
 };
 

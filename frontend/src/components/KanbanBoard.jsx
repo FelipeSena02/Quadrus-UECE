@@ -138,6 +138,12 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
     m => m.perfil === 'GERENTE' && m.usuario?.email === currentUserEmail
   );
 
+  const isPO = (project.membros || []).some(
+    m => m.perfil === 'PO' && m.usuario?.email === currentUserEmail
+  );
+
+  const canInvite = isManager || isPO;
+
   const [editNome, setEditNome] = useState(project.nome || '');
   const [editDescricao, setEditDescricao] = useState(project.descricao || '');
   const [editPrazo, setEditPrazo] = useState(project.data_prazo ? project.data_prazo.split('T')[0] : '');
@@ -160,7 +166,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
   // Estados do autocomplete de usuários (busca server-side)
   const [searchResults, setSearchResults] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [searchName, setSearchName] = useState('');
+  const [searchEmail, setSearchEmail] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const searchTimerRef = useRef(null);
@@ -172,7 +178,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
   // Reset invite modal state when closed
   useEffect(() => {
     if (!isInviteModalOpen) {
-      setSearchName('');
+      setSearchEmail('');
       setSelectedUser(null);
       setInviteEmail('');
       setInvitePerfil('DEV');
@@ -183,7 +189,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
   // Debounced server-side search for users
   const handleSearchUsers = useCallback((query) => {
-    setSearchName(query);
+    setSearchEmail(query);
     setSelectedUser(null);
     setInviteEmail('');
     setShowDropdown(true);
@@ -218,7 +224,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
     try {
       const res = await api.get(`/api/projetos/${project.id_projeto}/sprints`);
       setSprints(res.data);
-      
+
       const active = res.data.find(s => s.status === 'ATIVA');
       if (active) {
         setSelectedSprintId(active.id_sprint);
@@ -285,20 +291,15 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
   const handleInviteMember = async (e) => {
     e.preventDefault();
-    if (!isManager) return;
+    if (!canInvite) return;
     setInvitingMember(true);
     try {
-      const res = await api.post(`/api/projetos/${project.id_projeto}/membros`, {
+      await api.post(`/api/projetos/${project.id_projeto}/membros`, {
         email: inviteEmail,
         perfil: invitePerfil
       });
-      const updatedProject = {
-        ...project,
-        membros: [...(project.membros || []), res.data]
-      };
-      onUpdateProject(updatedProject);
       setIsInviteModalOpen(false);
-      showToast('Membro convidado com sucesso!', 'success');
+      showToast('Convite enviado com sucesso!', 'success');
     } catch (err) {
       console.error(err);
       showToast(err.response?.data?.error || 'Erro ao convidar membro.', 'error');
@@ -511,10 +512,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
   // ================= FILTRO E BUSCA DE CARDS =================
   const filteredCards = (project.cards || []).filter(card => {
-    const matchesSearch = card.titulo.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          card.id_card.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = card.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      card.id_card.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTag = selectedTag ? (card.tags || []).includes(selectedTag) : true;
-    const matchesSprint = selectedSprintId === 'backlog' 
+    const matchesSprint = selectedSprintId === 'backlog'
       ? (!card.id_sprint)
       : (card.id_sprint === selectedSprintId);
     return matchesSearch && matchesTag && matchesSprint;
@@ -552,7 +553,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       setNewCardTags([]);
       setNewCardMember('');
       setIsNewCardModalOpen(false);
-      
+
       // Refresh sprints to count the new card
       fetchSprints();
     } catch (error) {
@@ -613,7 +614,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       setSprints(prev => prev.map(s => s.id_sprint === sprintId ? res.data : s));
       setSelectedSprintId(sprintId);
       showToast('Sprint iniciada com sucesso!', 'success');
-      
+
       // Update cards in project to synchronize status
       if (onProjectAction) onProjectAction();
     } catch (err) {
@@ -627,7 +628,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       const res = await api.patch(`/api/sprints/${sprintId}/finalizar`);
       setSprints(prev => prev.map(s => s.id_sprint === sprintId ? res.data : s));
       showToast('Sprint concluída com sucesso!', 'success');
-      
+
       if (onProjectAction) onProjectAction();
     } catch (err) {
       console.error(err);
@@ -640,7 +641,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       await api.post(`/api/sprints/${targetSprintId}/migrar-cards`, {
         cardIds: [cardId]
       });
-      
+
       // Update card in project state locally
       const updatedCards = project.cards.map(c => c.id_card === cardId ? { ...c, id_sprint: targetSprintId } : c);
       onUpdateProject({
@@ -662,9 +663,9 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
       {/* Toast Notifications */}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      
+
       {/* Botão de Menu Flutuante para Mobile */}
-      <button 
+      <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
         className="md:hidden fixed bottom-6 right-6 z-50 bg-brand-600 text-white p-4 rounded-full shadow-lg active:scale-95 transition-all"
       >
@@ -693,11 +694,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
           <nav className="space-y-1.5 text-left">
             <button
               onClick={() => { setActiveTab('board'); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${
-                activeTab === 'board'
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${activeTab === 'board'
                   ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-600'
                   : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-              }`}
+                }`}
             >
               <FolderKanban size={18} />
               <span className="whitespace-nowrap">Painel de Tarefas</span>
@@ -705,11 +705,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
             <button
               onClick={() => { setActiveTab('sprint'); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${
-                activeTab === 'sprint'
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${activeTab === 'sprint'
                   ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-600'
                   : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-              }`}
+                }`}
             >
               <Calendar size={18} />
               <span className="whitespace-nowrap">Planejamento de Sprint</span>
@@ -717,11 +716,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
             <button
               onClick={() => { setActiveTab('metrics'); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${
-                activeTab === 'metrics'
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${activeTab === 'metrics'
                   ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-600'
                   : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-              }`}
+                }`}
             >
               <TrendingUp size={18} />
               <span className="whitespace-nowrap">Métricas</span>
@@ -729,11 +727,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
             <button
               onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${
-                activeTab === 'settings'
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-bold border-l-4 transition-all ${activeTab === 'settings'
                   ? 'bg-brand-50 text-brand-700 shadow-sm border-brand-600'
                   : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-              }`}
+                }`}
             >
               <Settings size={18} />
               <span className="whitespace-nowrap">Configurações</span>
@@ -752,7 +749,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
       {/* Backdrop para mobile */}
       {sidebarOpen && (
-        <div 
+        <div
           onClick={() => setSidebarOpen(false)}
           className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-30 md:hidden"
         />
@@ -760,15 +757,15 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
       {/* ================= 2. CONTEÚDO PRINCIPAL DA TELA ================= */}
       <main className="flex-1 p-6 md:p-8 flex flex-col bg-slate-50 overflow-y-auto h-full overflow-x-auto min-h-0 text-left">
-        
+
         {activeTab === 'board' ? (
           <>
             {/* ================= BARRA DE FERRAMENTAS / TOOLBAR ================= */}
             <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-5 shadow-sm mb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              
+
               {/* Esquerda: Membros e Filtros Rápidos */}
               <div className="flex flex-wrap items-center gap-4">
-                
+
                 {/* Lista de Membros do Projeto */}
                 <div className="flex items-center">
                   <div className="flex -space-x-2.5">
@@ -787,8 +784,14 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                       </div>
                     )}
                   </div>
-                  <button 
-                    onClick={() => alert('Para adicionar novos membros, por favor use a seção de Configurações.')}
+                  <button
+                    onClick={() => {
+                      if (canInvite) {
+                        setIsInviteModalOpen(true);
+                      } else {
+                        alert('Acesso negado: apenas gerentes e POs podem convidar membros.');
+                      }
+                    }}
                     className="ml-3 p-1.5 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:text-brand-600 hover:border-brand-500 transition-colors"
                     title="Adicionar Membro"
                   >
@@ -804,11 +807,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                     <button
                       key={tag}
                       onClick={() => setSelectedTag(selectedTag === tag ? '' : tag)}
-                      className={`px-3 py-1.5 rounded-lg font-semibold text-[10px] border transition-all active:scale-95 ${
-                        selectedTag === tag
+                      className={`px-3 py-1.5 rounded-lg font-semibold text-[10px] border transition-all active:scale-95 ${selectedTag === tag
                           ? 'bg-brand-600 border-brand-600 text-white shadow-sm'
                           : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       {tag}
                     </button>
@@ -832,9 +834,8 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                           setSelectedSprintId('backlog');
                           setSprintDropdownOpen(false);
                         }}
-                        className={`w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition-colors ${
-                          selectedSprintId === 'backlog' ? 'text-brand-600 bg-brand-50/50' : 'text-slate-700'
-                        }`}
+                        className={`w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition-colors ${selectedSprintId === 'backlog' ? 'text-brand-600 bg-brand-50/50' : 'text-slate-700'
+                          }`}
                       >
                         BACKLOG
                       </button>
@@ -845,9 +846,8 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                             setSelectedSprintId(sprint.id_sprint);
                             setSprintDropdownOpen(false);
                           }}
-                          className={`w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition-colors ${
-                            selectedSprintId === sprint.id_sprint ? 'text-brand-600 bg-brand-50/50' : 'text-slate-700'
-                          }`}
+                          className={`w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition-colors ${selectedSprintId === sprint.id_sprint ? 'text-brand-600 bg-brand-50/50' : 'text-slate-700'
+                            }`}
                         >
                           {sprint.nome} {sprint.status === 'ATIVA' && ' (Atual)'}
                         </button>
@@ -870,7 +870,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 pl-9 pr-4 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all placeholder-slate-400"
                   />
                 </div>
-                <button 
+                <button
                   onClick={() => { setSelectedTag(''); setSearchTerm(''); }}
                   className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors shrink-0"
                   title="Limpar Filtros"
@@ -883,7 +883,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
             {/* ================= QUADRO KANBAN ================= */}
             <div className="flex gap-5 min-h-[500px] items-stretch select-none pb-6 overflow-x-auto">
-              
+
               {/* Loop pelas colunas do Kanban */}
               {columns.map(col => {
                 const columnCards = filteredCards.filter(card => card.status === col.id);
@@ -924,7 +924,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                           const isAlta = card.prioridade === 'ALTA';
                           const isMedia = card.prioridade === 'MEDIA';
                           const isBaixa = card.prioridade === 'BAIXA';
-                          
+
                           // Cor do accent da esquerda dependendo do status e prioridade
                           let borderAccentColor = 'border-l-4 border-l-slate-400';
                           if (col.id === 'CONCLUIDO') borderAccentColor = 'border-l-4 border-l-emerald-500';
@@ -951,13 +951,12 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                                     CONCLUÍDO
                                   </span>
                                 ) : (
-                                  <span className={`font-bold text-[9px] px-2 py-0.5 rounded-md border ${
-                                    isAlta 
-                                      ? 'text-rose-700 bg-rose-50 border-rose-100' 
-                                      : isMedia 
+                                  <span className={`font-bold text-[9px] px-2 py-0.5 rounded-md border ${isAlta
+                                      ? 'text-rose-700 bg-rose-50 border-rose-100'
+                                      : isMedia
                                         ? 'text-brand-700 bg-brand-50 border-brand-100'
                                         : 'text-slate-600 bg-slate-50 border-slate-100'
-                                  }`}>
+                                    }`}>
                                     {isAlta ? 'ALTA PRIORIDADE' : isMedia ? 'MÉDIA PRIORIDADE' : 'BAIXA PRIORIDADE'}
                                   </span>
                                 )}
@@ -1046,7 +1045,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
             {/* Grid Principal */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left items-start">
-              
+
               {/* Esquerda: Criar Sprint */}
               <div className="lg:col-span-1 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                 <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
@@ -1141,11 +1140,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                                 {unfinishedCards.map(card => (
                                   <div key={card.id_card} className="bg-white border border-slate-200/80 rounded-lg p-2.5 shadow-sm text-xs text-left">
                                     <div className="flex justify-between items-center gap-2 mb-1">
-                                      <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded ${
-                                        card.prioridade === 'ALTA' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
-                                        card.prioridade === 'MEDIA' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                                        'bg-slate-50 text-slate-600 border border-slate-100'
-                                      }`}>
+                                      <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded ${card.prioridade === 'ALTA' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
+                                          card.prioridade === 'MEDIA' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                                            'bg-slate-50 text-slate-600 border border-slate-100'
+                                        }`}>
                                         {card.prioridade}
                                       </span>
                                     </div>
@@ -1207,7 +1205,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                                   )}
                                 </div>
                               </div>
-                              <div 
+                              <div
                                 onClick={() => {
                                   if (nextSprint) {
                                     setSelectedSprintId(nextSprint.id_sprint);
@@ -1246,7 +1244,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                       <p className="text-slate-400 text-xs max-w-sm mt-1 leading-relaxed">
                         Não há nenhuma sprint ativa no momento. Planeje suas tarefas e inicie uma das sprints listadas abaixo ou crie uma nova no painel ao lado.
                       </p>
-                      
+
                       {/* Lista de Sprints em Planejamento para Iniciar */}
                       {sprints.filter(s => s.status === 'PLANEJAMENTO').length > 0 && (
                         <div className="w-full mt-6 max-w-md border border-slate-100 rounded-xl p-3 bg-slate-50/50">
@@ -1282,7 +1280,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
               const totalCards = activeSprint ? (activeSprint.cards || []).length : 0;
               const completedCards = activeSprint ? (activeSprint.cards || []).filter(c => c.status === 'CONCLUIDO') : [];
               const completedCount = completedCards.length;
-              
+
               const completedPoints = completedCards.reduce((acc, c) => acc + (c.story_points || 0), 0);
               const unfinishedCount = totalCards - completedCount;
               const percentage = totalCards > 0 ? Math.round((completedCount / totalCards) * 100) : 0;
@@ -1411,7 +1409,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                               <span className="text-xs text-slate-500">{m.email || 'Email não disponível'}</span>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center gap-3">
                             {isManager && m.email !== currentUserEmail ? (
                               <>
@@ -1451,7 +1449,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                   <h3 className="text-sm font-bold text-rose-600 uppercase tracking-wider mb-4 flex items-center gap-2">
                     <AlertTriangle size={16} /> Zona de Perigo
                   </h3>
-                  
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="p-4 rounded-xl border border-orange-200 bg-orange-50/50 flex flex-col justify-between">
                       <div>
@@ -1459,8 +1457,8 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                           {project.arquivado ? 'Desarquivar Projeto' : 'Arquivar Projeto'}
                         </h4>
                         <p className="text-xs text-orange-700 mt-1 mb-4 leading-relaxed">
-                          {project.arquivado 
-                            ? 'O projeto voltará a aparecer no seu Dashboard principal e ficará ativo novamente.' 
+                          {project.arquivado
+                            ? 'O projeto voltará a aparecer no seu Dashboard principal e ficará ativo novamente.'
                             : 'O projeto não aparecerá mais no Dashboard principal. Todas as tarefas e dados ficarão salvos para consultas futuras.'
                           }
                         </p>
@@ -1499,9 +1497,9 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       {/* ================================= MODAL DE NOVA ATIVIDADE ================================= */}
       {isNewCardModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          
+
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl relative overflow-hidden text-left p-6 md:p-8 animate-scale-up">
-            
+
             {/* Header */}
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
               <div>
@@ -1521,7 +1519,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
 
             {/* Formulário */}
             <form onSubmit={handleCreateCard} className="space-y-4">
-              
+
               {/* Título */}
               <div className="space-y-1">
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Título da Atividade</label>
@@ -1563,11 +1561,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                       key={p.id}
                       type="button"
                       onClick={() => setNewCardPriority(p.id)}
-                      className={`py-2 px-3 border rounded-xl text-center font-bold text-[10px] transition-all ${
-                        newCardPriority === p.id 
-                          ? 'border-brand-600 bg-brand-600 text-white shadow-sm scale-[0.98]' 
+                      className={`py-2 px-3 border rounded-xl text-center font-bold text-[10px] transition-all ${newCardPriority === p.id
+                          ? 'border-brand-600 bg-brand-600 text-white shadow-sm scale-[0.98]'
                           : p.color
-                      }`}
+                        }`}
                     >
                       {p.label}
                     </button>
@@ -1586,11 +1583,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                         key={tag}
                         type="button"
                         onClick={() => toggleFormTag(tag)}
-                        className={`px-3 py-1.5 rounded-lg border font-bold text-[9px] transition-all ${
-                          isSelected
+                        className={`px-3 py-1.5 rounded-lg border font-bold text-[9px] transition-all ${isSelected
                             ? 'bg-slate-800 border-slate-800 text-white'
                             : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
-                        }`}
+                          }`}
                       >
                         {tag}
                       </button>
@@ -1635,7 +1631,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
               {project.arquivado ? 'Desarquivar este projeto?' : 'Arquivar este projeto?'}
             </h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-              {project.arquivado 
+              {project.arquivado
                 ? <>Tem certeza que deseja desarquivar <strong>{project.nome}</strong>? Ele voltará a aparecer na sua lista de projetos ativos.</>
                 : <>Tem certeza que deseja arquivar <strong>{project.nome}</strong>? Ele deixará de aparecer no dashboard principal, mas seus dados continuarão salvos.</>
               }
@@ -1667,7 +1663,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
             </div>
             <h3 className="text-lg font-extrabold text-slate-800 mb-2">Excluir projeto definitivamente?</h3>
             <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-              Você está prestes a excluir <strong>{project.nome}</strong> permanentemente. Todas as tarefas, logs e membros serão removidos. <br/><br/>Esta ação é irreversível. Deseja continuar?
+              Você está prestes a excluir <strong>{project.nome}</strong> permanentemente. Todas as tarefas, logs e membros serão removidos. <br /><br />Esta ação é irreversível. Deseja continuar?
             </p>
             <div className="flex gap-3 justify-center">
               <button
@@ -1691,7 +1687,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       {isInviteModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl relative overflow-hidden text-left p-6 md:p-8 animate-scale-up">
-            
+
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
               <div>
                 <h2 className="text-lg font-extrabold text-brand-700 flex items-center gap-2">
@@ -1709,52 +1705,6 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
             </div>
 
             <form onSubmit={handleInviteMember} className="space-y-4">
-              <div className="space-y-1.5 relative">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  Buscar Usuário (Nome)
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={searchName}
-                  onChange={(e) => handleSearchUsers(e.target.value)}
-                  onFocus={() => setShowDropdown(true)}
-                  placeholder="Digite ao menos 2 caracteres..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all placeholder-slate-400"
-                />
-                
-                {/* Dropdown de Autocomplete */}
-                {showDropdown && searchName.length >= 2 && !selectedUser && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                    {loadingUsers ? (
-                      <div className="p-3 text-sm text-slate-500 text-center flex items-center justify-center gap-2">
-                        <Loader2 size={14} className="animate-spin" /> Buscando...
-                      </div>
-                    ) : (
-                      searchResults.map(u => (
-                          <button
-                            key={u.id_usuario}
-                            type="button"
-                            className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0 flex flex-col"
-                            onClick={() => {
-                              setSelectedUser(u);
-                              setSearchName(u.nome);
-                              setInviteEmail(u.email);
-                              setShowDropdown(false);
-                            }}
-                          >
-                            <span className="font-bold text-slate-700">{u.nome}</span>
-                            <span className="text-xs text-slate-500">{u.email}</span>
-                          </button>
-                        ))
-                    )}
-                    {!loadingUsers && searchResults.length === 0 && (
-                      <div className="p-3 text-sm text-slate-500 text-center">Nenhum usuário encontrado.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
               <div className="space-y-1.5">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
                   E-mail do Usuário
@@ -1762,10 +1712,10 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                 <input
                   type="email"
                   required
-                  disabled
                   value={inviteEmail}
-                  placeholder="Selecione um usuário acima"
-                  className="w-full bg-slate-100 border border-slate-200 rounded-xl py-2.5 px-4 text-sm text-slate-500 cursor-not-allowed"
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="Digite o e-mail do usuário..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all placeholder-slate-400 text-slate-700"
                 />
               </div>
 

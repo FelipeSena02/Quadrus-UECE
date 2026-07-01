@@ -146,6 +146,29 @@ export default function App() {
     }
   };
 
+  const handleAcceptInvite = async (id) => {
+    try {
+      await api.post(`/api/notificacoes/${id}/aceitar`);
+      alert('Convite aceito com sucesso!');
+      await fetchNotifications();
+      await fetchProjects(showArchived);
+    } catch (error) {
+      console.error('Erro ao aceitar convite:', error);
+      alert(error.response?.data?.error || 'Erro ao aceitar convite.');
+    }
+  };
+
+  const handleDeclineInvite = async (id) => {
+    try {
+      await api.post(`/api/notificacoes/${id}/recusar`);
+      alert('Convite recusado com sucesso.');
+      await fetchNotifications();
+    } catch (error) {
+      console.error('Erro ao recusar convite:', error);
+      alert(error.response?.data?.error || 'Erro ao recusar convite.');
+    }
+  };
+
   const formatTimeAgo = (dateStr) => {
     const d = new Date(dateStr);
     const now = new Date();
@@ -392,14 +415,32 @@ export default function App() {
                     notifications.map((n) => (
                       <div
                         key={n.id_notificacao}
-                        onClick={() => !n.lida && handleMarkAsRead(n.id_notificacao)}
-                        className={`text-xs px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+                        onClick={() => !n.lida && !n.id_projeto_origem && handleMarkAsRead(n.id_notificacao)}
+                        className={`text-xs px-3 py-2.5 rounded-lg transition-colors ${
+                          n.id_projeto_origem ? '' : 'cursor-pointer'
+                        } ${
                           n.lida
                             ? 'text-slate-400 hover:bg-slate-50'
                             : 'text-slate-700 bg-brand-50/50 hover:bg-brand-50 font-semibold'
                         }`}
                       >
                         <p className="leading-relaxed">{n.mensagem}</p>
+                        {n.id_projeto_origem && !n.lida && (
+                          <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleAcceptInvite(n.id_notificacao)}
+                              className="px-2.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-[10px] font-bold transition-colors"
+                            >
+                              Aceitar
+                            </button>
+                            <button
+                              onClick={() => handleDeclineInvite(n.id_notificacao)}
+                              className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-[10px] font-bold transition-colors"
+                            >
+                              Recusar
+                            </button>
+                          </div>
+                        )}
                         <p className="text-slate-400 text-[10px] mt-1 font-normal">{formatTimeAgo(n.createdAt)}</p>
                       </div>
                     ))

@@ -25,6 +25,12 @@ export const listarNotificacoes = async (req, res) => {
             id_projeto: true,
           },
         },
+        projeto: {
+          select: {
+            id_projeto: true,
+            nome: true,
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
       take: 50,
@@ -102,5 +108,109 @@ export const marcarTodasComoLidas = async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "Erro ao marcar notificações como lidas" });
+  }
+};
+
+/**
+ * Aceitar convite de projeto
+ */
+export const aceitarConvite = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { email: req.user.email },
+    });
+
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
+
+    const notificacao = await prisma.notificacao.findUnique({
+      where: { id_notificacao: id },
+    });
+
+    if (!notificacao) {
+      return res.status(404).json({ error: "Notificação não encontrada" });
+    }
+
+    // Verificar se a notificação pertence ao usuário autenticado e se é um convite
+    if (notificacao.id_usuario_destino !== usuario.id_usuario) {
+      return res.status(403).json({ error: "Acesso negado" });
+    }
+
+    if (!notificacao.id_projeto_origem || !notificacao.convite_perfil) {
+      return res.status(400).json({ error: "Esta notificação não é um convite de projeto válido" });
+    }
+
+    // Evitar duplicidade de membro
+    const membroExistente = await prisma.membroProjeto.findUnique({
+      where: {
+        id_projeto_id_usuario: {
+          id_projeto: notificacao.id_projeto_origem,
+          id_usuario: usuario.id_usuario,
+        },
+      },
+    });
+
+    if (!membroExistente) {
+      // Adicionar membro ao projeto
+      await prisma.membroProjeto.create({
+        data: {
+          id_projeto: notificacao.id_projeto_origem,
+          id_usuario: usuario.id_usuario,
+          perfil: notificacao.convite_perfil,
+        },
+      });
+    }
+
+    // Deletar a notificação do convite após aceitar
+    await prisma.notificacao.delete({
+      where: { id_notificacao: id },
+    });
+
+    return res.json({ message: "Convite aceito com sucesso!" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Erro ao aceitar convite" });
+  }
+};
+
+/**
+ * Recusar convite de projeto
+ */
+export const recusarConvite = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { email: req.user.email },
+    });
+
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
+
+    const notificacao = await prisma.notificacao.findUnique({
+      where: { id_notificacao: id },
+    });
+
+    if (!notificacao) {
+      return res.status(404).json({ error: "Notificação não encontrada" });
+    }
+
+    if (notificacao.id_usuario_destino !== usuario.id_usuario) {
+      return res.status(403).json({ error: "Acesso negado" });
+    }
+
+    // Deletar a notificação do convite
+    await prisma.notificacao.delete({
+      where: { id_notificacao: id },
+    });
+
+    return res.json({ message: "Convite recusado com sucesso." });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Erro ao recusar convite" });
   }
 };

@@ -71,6 +71,7 @@ model Projeto {
   sprints       Sprint[]
   cards         Card[]
   arquivado     Boolean          @default(false)
+  notificacoes  Notificacao[]
   
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
@@ -176,12 +177,15 @@ model VotoPoker {
 model Notificacao {
   id_notificacao     String      @id @default(uuid()) @db.Uuid
   id_usuario_destino String      @db.Uuid
-  id_card_origem     String      @db.Uuid
+  id_card_origem     String?     @db.Uuid
+  id_projeto_origem  String?     @db.Uuid
+  convite_perfil     Perfil?
   mensagem           String
   lida               Boolean     @default(false)
   
   destino            Usuario     @relation("DestinoNotificacoes", fields: [id_usuario_destino], references: [id_usuario], onDelete: Cascade)
-  card               Card        @relation(fields: [id_card_origem], references: [id_card], onDelete: Cascade)
+  card               Card?       @relation(fields: [id_card_origem], references: [id_card], onDelete: Cascade)
+  projeto            Projeto?    @relation(fields: [id_projeto_origem], references: [id_projeto], onDelete: Cascade)
   
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt

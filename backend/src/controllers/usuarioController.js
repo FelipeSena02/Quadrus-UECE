@@ -219,7 +219,7 @@ export const buscarUsuarios = async (req, res) => {
 
     const usuarios = await prisma.usuario.findMany({
       where: {
-        nome: {
+        email: {
           contains: q.trim(),
           mode: 'insensitive',
         },
@@ -230,7 +230,7 @@ export const buscarUsuarios = async (req, res) => {
         email: true,
       },
       take: Math.min(parseInt(limit) || 20, 50),
-      orderBy: { nome: 'asc' },
+      orderBy: { email: 'asc' },
     });
 
     return res.status(200).json(usuarios);
