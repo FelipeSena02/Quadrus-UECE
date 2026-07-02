@@ -184,6 +184,11 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
   const [selectedSprintId, setSelectedSprintId] = useState('backlog');
   const [sprintDropdownOpen, setSprintDropdownOpen] = useState(false);
 
+  // Sprint Closing Modal Local State
+  const [sprintClosingMoves, setSprintClosingMoves] = useState({}); // { [id_card]: 'left' | 'right' }
+  const [isBacklogModalOpen, setIsBacklogModalOpen] = useState(false);
+  const [isFinishingSprint, setIsFinishingSprint] = useState(false);
+
   // Sprint Creation Form
   const [newSprintNome, setNewSprintNome] = useState('');
   const [newSprintDataInicio, setNewSprintDataInicio] = useState('');
@@ -1035,13 +1040,51 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
     }
   };
 
+  const handleFinishSprintAction = async (activeSprint, nextSprint, unfinishedCards, nextSprintCards) => {
+    setIsFinishingSprint(true);
+    try {
+      // 1. Determine moves based on local state
+      let rightCardIds = nextSprintCards.filter(c => sprintClosingMoves[c.id_card] !== 'left').map(c => c.id_card);
+      rightCardIds = [...rightCardIds, ...unfinishedCards.filter(c => sprintClosingMoves[c.id_card] === 'right').map(c => c.id_card)];
+
+      let leftCardIds = unfinishedCards.filter(c => sprintClosingMoves[c.id_card] !== 'right').map(c => c.id_card);
+      leftCardIds = [...leftCardIds, ...nextSprintCards.filter(c => sprintClosingMoves[c.id_card] === 'left').map(c => c.id_card)];
+
+      // 2. Execute migrations
+      if (rightCardIds.length > 0 && nextSprint) {
+        await api.post(`/api/sprints/${nextSprint.id_sprint}/migrar-cards`, { cardIds: rightCardIds });
+      }
+      if (leftCardIds.length > 0) {
+        await api.post(`/api/sprints/null/migrar-cards`, { cardIds: leftCardIds, idProjeto: project.id_projeto });
+      }
+
+      // 3. Finish active sprint
+      const res = await api.patch(`/api/sprints/${activeSprint.id_sprint}/finalizar`);
+      setSprints(prev => prev.map(s => s.id_sprint === activeSprint.id_sprint ? res.data : s));
+      
+      setSprintClosingMoves({});
+      setIsBacklogModalOpen(false);
+      showToast('Sprint concluída com sucesso!', 'success');
+
+      if (onProjectAction) onProjectAction();
+      fetchSprints();
+    } catch (err) {
+      console.error(err);
+      showToast(err.response?.data?.error || 'Erro ao finalizar sprint.', 'error');
+    } finally {
+      setIsFinishingSprint(false);
+    }
+  };
+
   const handleFinishSprint = async (sprintId) => {
+    // Mantendo caso seja usado em outros lugares, embora o fluxo principal vá usar handleFinishSprintAction
     try {
       const res = await api.patch(`/api/sprints/${sprintId}/finalizar`);
       setSprints(prev => prev.map(s => s.id_sprint === sprintId ? res.data : s));
       showToast('Sprint concluída com sucesso!', 'success');
 
       if (onProjectAction) onProjectAction();
+      fetchSprints();
     } catch (err) {
       console.error(err);
       showToast(err.response?.data?.error || 'Erro ao finalizar sprint.', 'error');
@@ -1177,7 +1220,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
       )}
 
       {/* ================= 2. CONTEÚDO PRINCIPAL DA TELA ================= */}
-      <main className="flex-1 p-6 md:p-8 flex flex-col bg-slate-50 overflow-y-hidden h-full overflow-x-auto min-h-0 text-left">
+      <main className={`flex-1 p-6 md:p-8 flex flex-col bg-slate-50 h-full overflow-x-auto min-h-0 text-left ${activeTab === 'board' ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
 
         {activeTab === 'board' ? (
           <>
@@ -1458,15 +1501,17 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                                   Mover Direita
                                 </button>
                                 <div className="border-t border-slate-100 my-1" />
-                                <button
-                                  onClick={() => {
-                                    handleDeleteColumn(col.id);
-                                    setActiveColumnMenu(null);
-                                  }}
-                                  className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 hover:text-rose-600 text-rose-500 transition-colors flex items-center gap-2"
-                                >
-                                  Excluir Coluna
-                                </button>
+                                {!['A FAZER', 'EM ANDAMENTO', 'HOMOLOGAÇÃO', 'CONCLUÍDO'].includes(col.label) && (
+                                  <button
+                                    onClick={() => {
+                                      handleDeleteColumn(col.id);
+                                      setActiveColumnMenu(null);
+                                    }}
+                                    className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 hover:text-rose-600 text-rose-500 transition-colors flex items-center gap-2"
+                                  >
+                                    Excluir Coluna
+                                  </button>
+                                )}
                               </div>
                             </>
                           )}
@@ -1739,6 +1784,7 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                   if (activeSprint) {
                     const unfinishedCards = (activeSprint.cards || []).filter(c => c.status !== 'CONCLUIDO');
                     const finishedCards = (activeSprint.cards || []).filter(c => c.status === 'CONCLUIDO');
+                    const nextSprintCards = nextSprint ? (nextSprint.cards || []) : [];
 
                     return (
                       <div className="flex flex-col h-full justify-between gap-6">
@@ -1758,19 +1804,24 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                                 {activeSprint.nome} (Atual)
                               </span>
                               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                                {unfinishedCards.map(card => (
-                                  <div key={card.id_card} className="bg-white border border-slate-200/80 rounded-lg p-2.5 shadow-sm text-xs text-left">
-                                    <div className="flex justify-between items-center gap-2 mb-1">
-                                      <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded ${card.prioridade === 'ALTA' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
-                                        card.prioridade === 'MEDIA' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                                          'bg-slate-50 text-slate-600 border border-slate-100'
-                                        }`}>
-                                        {card.prioridade}
-                                      </span>
+                                {(() => {
+                                  let leftCards = unfinishedCards.filter(c => sprintClosingMoves[c.id_card] !== 'right');
+                                  leftCards = [...leftCards, ...nextSprintCards.filter(c => sprintClosingMoves[c.id_card] === 'left')];
+
+                                  return leftCards.map(card => (
+                                    <div key={card.id_card} onClick={() => setSprintClosingMoves(prev => ({ ...prev, [card.id_card]: 'right' }))} className="bg-white border border-slate-200/80 rounded-lg p-2.5 shadow-sm text-xs text-left cursor-pointer hover:border-blue-300 transition-colors">
+                                      <div className="flex justify-between items-center gap-2 mb-1">
+                                        <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded ${card.prioridade === 'ALTA' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
+                                          card.prioridade === 'MEDIA' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                                            'bg-slate-50 text-slate-600 border border-slate-100'
+                                          }`}>
+                                          {card.prioridade}
+                                        </span>
+                                      </div>
+                                      <p className="font-bold text-slate-700">{card.titulo}</p>
                                     </div>
-                                    <p className="font-bold text-slate-700">{card.titulo}</p>
-                                  </div>
-                                ))}
+                                  ));
+                                })()}
                                 {finishedCards.map(card => (
                                   <div key={card.id_card} className="bg-slate-50/80 border border-slate-200/40 rounded-lg p-2.5 text-xs opacity-60 text-left">
                                     <p className="font-semibold text-slate-400 line-through">{card.titulo}</p>
@@ -1789,13 +1840,22 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                             <div className="flex flex-row md:flex-col items-center justify-center gap-2 shrink-0 self-center">
                               <button
                                 onClick={() => {
-                                  if (!nextSprint) {
-                                    showToast('Você precisa ter uma próxima sprint em planejamento para migrar as tarefas.', 'info');
-                                    return;
-                                  }
-                                  unfinishedCards.forEach(c => handleMigrateCard(c.id_card, nextSprint.id_sprint));
+                                  let currentLeftCards = unfinishedCards.filter(c => sprintClosingMoves[c.id_card] !== 'right');
+                                  currentLeftCards = [...currentLeftCards, ...nextSprintCards.filter(c => sprintClosingMoves[c.id_card] === 'left')];
+                                  
+                                  if (currentLeftCards.length === 0) return;
+                                  
+                                  const newMoves = { ...sprintClosingMoves };
+                                  currentLeftCards.forEach(c => {
+                                    newMoves[c.id_card] = 'right';
+                                  });
+                                  setSprintClosingMoves(newMoves);
                                 }}
-                                disabled={unfinishedCards.length === 0 || !nextSprint}
+                                disabled={(() => {
+                                  let currentLeftCards = unfinishedCards.filter(c => sprintClosingMoves[c.id_card] !== 'right');
+                                  currentLeftCards = [...currentLeftCards, ...nextSprintCards.filter(c => sprintClosingMoves[c.id_card] === 'left')];
+                                  return currentLeftCards.length === 0;
+                                })()}
                                 className="p-2.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-600 rounded-full transition-all hover:scale-105 active:scale-95 flex flex-col items-center gap-0.5 shadow-sm"
                                 title="Migrar tarefas pendentes para a próxima sprint"
                               >
@@ -1812,28 +1872,38 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                                   {nextSprint ? `${nextSprint.nome} (Próxima)` : 'Próxima Sprint'}
                                 </span>
                                 <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                                  {nextSprint ? (
-                                    (nextSprint.cards || []).map(card => (
-                                      <div key={card.id_card} className="bg-white border border-slate-200/80 rounded-lg p-2.5 shadow-sm text-xs text-left">
-                                        <p className="font-bold text-slate-700">{card.titulo}</p>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div className="flex flex-col items-center justify-center py-8 text-center text-slate-400">
-                                      <Calendar size={20} className="mb-1" />
-                                      <p className="text-[10px] font-semibold">Nenhuma sprint planejada</p>
-                                    </div>
-                                  )}
+                                  {(() => {
+                                    let rightCards = nextSprintCards.filter(c => sprintClosingMoves[c.id_card] !== 'left');
+                                    rightCards = [...rightCards, ...unfinishedCards.filter(c => sprintClosingMoves[c.id_card] === 'right')];
+                                    
+                                    if (rightCards.length > 0) {
+                                      return rightCards.map(card => (
+                                        <div key={card.id_card} onClick={() => setSprintClosingMoves(prev => ({ ...prev, [card.id_card]: 'left' }))} className="bg-white border border-slate-200/80 rounded-lg p-2.5 shadow-sm text-xs text-left cursor-pointer hover:border-blue-300 transition-colors">
+                                          <div className="flex justify-between items-center gap-2 mb-1">
+                                            <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded ${card.prioridade === 'ALTA' ? 'bg-rose-50 text-rose-700 border border-rose-100' :
+                                              card.prioridade === 'MEDIA' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                                                'bg-slate-50 text-slate-600 border border-slate-100'
+                                              }`}>
+                                              {card.prioridade}
+                                            </span>
+                                          </div>
+                                          <p className="font-bold text-slate-700">{card.titulo}</p>
+                                        </div>
+                                      ));
+                                    } else {
+                                      return (
+                                        <div className="flex flex-col items-center justify-center py-8 text-center text-slate-400">
+                                          <Calendar size={20} className="mb-1" />
+                                          <p className="text-[10px] font-semibold">Nenhuma tarefa na próxima sprint</p>
+                                        </div>
+                                      );
+                                    }
+                                  })()}
                                 </div>
                               </div>
                               <div
                                 onClick={() => {
-                                  if (nextSprint) {
-                                    setSelectedSprintId(nextSprint.id_sprint);
-                                    setActiveTab('board');
-                                  } else {
-                                    showToast('Crie uma próxima sprint no painel ao lado primeiro.', 'info');
-                                  }
+                                  setIsBacklogModalOpen(true);
                                 }}
                                 className="border border-dashed border-slate-300 rounded-lg p-3 text-center text-[10px] font-bold text-slate-400 mt-4 bg-white/50 cursor-pointer hover:border-brand-500 hover:text-brand-600 transition-all select-none"
                               >
@@ -1843,13 +1913,56 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                           </div>
                         </div>
 
+                        {/* Modal para Adicionar do Backlog */}
+                        {isBacklogModalOpen && (
+                          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+                            <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col max-h-[80vh]">
+                              <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
+                                  <FolderKanban size={20} className="text-brand-600" />
+                                  Itens do Backlog
+                                </h3>
+                                <button onClick={() => setIsBacklogModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                                  <X size={20} />
+                                </button>
+                              </div>
+                              <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+                                {(() => {
+                                  const backlogCards = (project.cards || []).filter(c => !c.id_sprint && c.status !== 'CONCLUIDO');
+                                  if (backlogCards.length === 0) {
+                                    return <p className="text-sm text-slate-500 text-center py-6">Nenhuma tarefa no backlog.</p>;
+                                  }
+                                  return backlogCards.map(card => (
+                                    <div key={card.id_card} className="flex items-center justify-between p-3 border border-slate-200 rounded-xl hover:border-brand-300 bg-slate-50">
+                                      <div>
+                                        <p className="text-sm font-bold text-slate-700">{card.titulo}</p>
+                                        <p className="text-xs text-slate-500 mt-1">Prioridade: {card.prioridade}</p>
+                                      </div>
+                                      <button 
+                                        onClick={() => {
+                                          setSprintClosingMoves(prev => ({ ...prev, [card.id_card]: 'right' }));
+                                          setIsBacklogModalOpen(false);
+                                        }}
+                                        className="px-3 py-1.5 text-xs font-bold text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors"
+                                      >
+                                        Adicionar
+                                      </button>
+                                    </div>
+                                  ));
+                                })()}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Botão Concluir/Fechar */}
                         <div className="flex justify-end pt-4 border-t border-slate-100">
                           <button
-                            onClick={() => handleFinishSprint(activeSprint.id_sprint)}
-                            className="px-5 py-2.5 rounded-xl border border-rose-200 bg-rose-50/50 hover:bg-rose-50 text-rose-600 hover:text-rose-700 font-bold text-xs transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                            onClick={() => handleFinishSprintAction(activeSprint, nextSprint, unfinishedCards, nextSprint ? (nextSprint.cards || []) : [])}
+                            disabled={isFinishingSprint}
+                            className="px-5 py-2.5 rounded-xl border border-rose-200 bg-rose-50/50 hover:bg-rose-50 text-rose-600 hover:text-rose-700 font-bold text-xs transition-all shadow-sm active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
                           >
-                            <CheckCircle2 size={15} />
+                            {isFinishingSprint ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
                             Fechar Sprint Atual
                           </button>
                         </div>
@@ -2590,13 +2703,15 @@ export default function KanbanBoard({ project, onUpdateProject, userDisplayName,
                                   >
                                     <Settings size={14} />
                                   </button>
-                                  <button
-                                    onClick={() => handleDeleteColumn(col.id_coluna)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 ml-1"
-                                    title="Excluir Coluna"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
+                                  {!['A FAZER', 'EM ANDAMENTO', 'HOMOLOGAÇÃO', 'CONCLUÍDO'].includes(col.nome) && (
+                                    <button
+                                      onClick={() => handleDeleteColumn(col.id_coluna)}
+                                      className="p-1 text-slate-400 hover:text-rose-600 ml-1"
+                                      title="Excluir Coluna"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
                                 </div>
                               </>
                             )}

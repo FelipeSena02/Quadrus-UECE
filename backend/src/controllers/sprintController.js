@@ -451,29 +451,47 @@ export const migrarCards = async (req, res) => {
   }
 
   try {
-    const sprintDestino = await prisma.sprint.findUnique({
-      where: { id_sprint: id },
-    });
+    let sprintDestinoId = id;
+    let projetoId = null;
 
-    if (!sprintDestino) {
-      return res.status(404).json({ error: "Sprint de destino não encontrada" });
+    if (id === "null" || id === "backlog") {
+      sprintDestinoId = null;
+      // We need to get the projetoId from one of the cards to verify permissions
+      if (cardIds.length > 0) {
+        const firstCard = await prisma.card.findUnique({ where: { id_card: cardIds[0] } });
+        if (!firstCard) {
+          return res.status(404).json({ error: "Card não encontrado para migração ao backlog" });
+        }
+        projetoId = firstCard.id_projeto;
+      }
+    } else {
+      const sprintDestino = await prisma.sprint.findUnique({
+        where: { id_sprint: id },
+      });
+
+      if (!sprintDestino) {
+        return res.status(404).json({ error: "Sprint de destino não encontrada" });
+      }
+      projetoId = sprintDestino.id_projeto;
     }
 
-    // Controle de Acesso: Verificar se o usuário pertence ao projeto da sprint destino
-    const membro = await obterMembroProjeto(sprintDestino.id_projeto, req.user.email);
-    if (!membro) {
-      return res.status(403).json({
-        error: "Acesso negado: você não é membro deste projeto",
-      });
+    if (projetoId) {
+      // Controle de Acesso: Verificar se o usuário pertence ao projeto da sprint destino ou do card
+      const membro = await obterMembroProjeto(projetoId, req.user.email);
+      if (!membro) {
+        return res.status(403).json({
+          error: "Acesso negado: você não é membro deste projeto",
+        });
+      }
     }
 
     await prisma.card.updateMany({
       where: {
         id_card: { in: cardIds },
-        id_projeto: sprintDestino.id_projeto,
+        ...(projetoId ? { id_projeto: projetoId } : {}),
       },
       data: {
-        id_sprint: id,
+        id_sprint: sprintDestinoId,
       },
     });
 

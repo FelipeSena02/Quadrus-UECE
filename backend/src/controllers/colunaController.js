@@ -144,6 +144,13 @@ export const deletarColuna = async (req, res) => {
     // Garantir customização inicial
     await garantirCustomizacaoInicial(coluna.id_projeto);
 
+    const COLUNAS_PADRAO = ["A FAZER", "EM ANDAMENTO", "HOMOLOGAÇÃO", "CONCLUÍDO"];
+    if (COLUNAS_PADRAO.includes(coluna.nome)) {
+      return res.status(400).json({
+        error: "Não é possível excluir colunas padrão do sistema.",
+      });
+    }
+
     // Verificar se há cards ativos nesta coluna
     const contagemCards = await prisma.card.count({
       where: {
