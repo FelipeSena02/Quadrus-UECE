@@ -12,6 +12,9 @@ import sprintRoutes from "./routes/sprintRoutes.js";
 import notificacaoRoutes from "./routes/notificacaoRoutes.js";
 import colunaRoutes from "./routes/colunaRoutes.js";
 import etiquetaRoutes from "./routes/etiquetaRoutes.js";
+import membroProjetoRoutes from "./routes/membroProjetoRoutes.js";
+import anexoCardRoutes from "./routes/anexoCardRoutes.js";
+import votoPokerRoutes from "./routes/votoPokerRoutes.js";
 
 dotenv.config();
 
@@ -51,6 +54,9 @@ app.use("/api", sprintRoutes);
 app.use("/api", notificacaoRoutes);
 app.use("/api", colunaRoutes);
 app.use("/api", etiquetaRoutes);
+app.use("/api", membroProjetoRoutes);
+app.use("/api", anexoCardRoutes);
+app.use("/api", votoPokerRoutes);
 
 // Socket.io setup
 const io = new Server(httpServer, {
